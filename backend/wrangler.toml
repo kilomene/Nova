@@ -6,7 +6,7 @@ compatibility_date = "2025-06-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "nova-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "5edd78ba-2e77-4520-a8bb-31072133175d"
 
 [[r2_buckets]]
 binding = "MEDIA"
@@ -28,7 +28,7 @@ new_sqlite_classes = ["RateLimit"]
 
 [vars]
 # Firebase project id used to verify ID tokens. MUST be set for auth to work.
-FIREBASE_PROJECT_ID = "REPLACE_WITH_FIREBASE_PROJECT_ID"
+FIREBASE_PROJECT_ID = "nova-dc139"
 APP_ORIGIN = "https://nova.example"
 
 # ---- Secrets (set with `wrangler secret put <NAME>`, NEVER commit) ----
@@ -37,3 +37,4 @@ APP_ORIGIN = "https://nova.example"
 # FIREBASE_SERVICE_ACCOUNT - JSON of a Firebase service-account key (for FCM v1 sends)
 # MEDIA_SIGNING_SECRET     - HMAC key for short-lived signed media URLs
 # ADMIN_REVIEW_KEY         - bearer for the manual KYC review endpoint
+# DROPBOX_ACCESS_TOKEN     - Dropbox API token for voice-call recordings (wired later)
