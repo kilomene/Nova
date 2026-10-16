@@ -211,3 +211,34 @@ pre-upload. Nothing is sent anywhere for scanning.
 - **Authenticity**: agent-created bot accounts carry `is_bot=1` and are
   labeled **BOT** in the UI — never presented as real users.
   Impersonation reports go to the review queue like every other report.
+
+## 14. Pre-push security audit gate (2026-10-16) — PASSED
+
+Run before every push. Nothing ships until all checks pass.
+
+- [x] **Auth**: Firebase ID token verified on every endpoint via `guard()`;
+      `/api/health` is the only unauthenticated route (by design);
+      `/media/*` uses HMAC-signed URLs; `/api/sync/ws` verifies the token
+      from the query param; admin routes use `ADMIN_REVIEW_KEY`.
+- [x] **Rate limiting**: per-IP + per-user via the RateLimit Durable Object
+      on auth, signup, payments, uploads, messaging, and admin routes.
+- [x] **Input validation**: strict schemas (`vStr`, `vInt`, `vEnum`, …) with
+      max lengths on all inputs; file type + size limits on uploads.
+- [x] **SQL injection**: all D1 queries use `?` placeholders. Two apparent
+      interpolations verified safe: (1) static backtick query with `?`
+      binding; (2) `r.${col}` where `col` is whitelisted by regex
+      (`product`→`product_id`, `seller`→`seller_uid`).
+- [x] **Secrets**: Workers secrets only. Repo grep clean (no keys/tokens in
+      code). `.gitignore` covers keystores, `.env`, `google-services.json`
+      (real), `wrangler` state.
+- [x] **Webhooks**: Flutterwave `verif-hash` signature verified; idempotency
+      via `tx_ref`. `FLUTTERWAVE_SECRET_HASH` is the remaining manual step
+      (dashboard → Settings → Webhooks).
+- [x] **Transport**: CORS locked to the app origin; security headers on
+      Workers responses; R2 via short-lived signed URLs; private bucket.
+- [x] **Logging**: zero secrets/tokens/PII/plaintext keys in logs; errors
+      return generic codes (`httpError`), never stack traces.
+- [x] **Admin**: `ADMIN_REVIEW_KEY` bearer; every admin action audit-logged.
+- [x] **Abuse systems active**: VPN/proxy/Tor blacklist, device watch
+      (3 suspensions → high-risk), strikes (3 → suspension), nudity scanner.
+- [x] **Dependencies**: pinned in `package-lock.json` / `pubspec.lock`.
