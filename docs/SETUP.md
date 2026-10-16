@@ -34,6 +34,13 @@ wrangler secret put DROPBOX_ACCESS_TOKEN      # Dropbox API token for voice-call
 # (get from Dropbox App Console; wired later — recordings stay in R2 until then)
 ```
 
+### Voice notes lifecycle
+- Format: Opus (Ogg), client-side encoded before upload.
+- R2 `nova-media`: hot storage, **auto-deleted 24h after upload** (fast playback).
+- Dropbox: archive copy, **auto-deleted 30d after upload** via the daily
+  Workers cron (`0 3 * * *` UTC, see `wrangler.toml` `[triggers]`).
+- Flow: upload → R2 → async Dropbox copy → R2 expiry at 24h → Dropbox expiry at 30d.
+
 For reference (fresh setup):
 ```bash
 cd backend
