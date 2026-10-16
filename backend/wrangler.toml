@@ -38,3 +38,6 @@ APP_ORIGIN = "https://nova.example"
 # MEDIA_SIGNING_SECRET     - HMAC key for short-lived signed media URLs
 # ADMIN_REVIEW_KEY         - bearer for the manual KYC review endpoint
 # DROPBOX_ACCESS_TOKEN     - Dropbox API token for voice-call recordings (wired later)
+
+[triggers]
+crons = ["0 3 * * *"]  # daily 03:00 UTC: voice-note lifecycle cleanup (R2 24h, Dropbox 30d)
