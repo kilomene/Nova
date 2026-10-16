@@ -516,3 +516,23 @@ CREATE TABLE IF NOT EXISTS call_recordings (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_calls_users ON call_recordings(caller_uid, callee_uid, created_at DESC);
+-- ============ Voice notes (1-on-1 DMs) ============
+-- Opus codec (Ogg/WebM), client-side encoded. Storage lifecycle:
+-- R2 "nova-media": hot storage, auto-deleted 24h after upload (fast playback).
+-- Dropbox: archive copy, auto-deleted 30d after upload (Workers cron cleanup).
+-- Flow: upload -> R2 -> async Dropbox copy -> R2 expiry 24h -> Dropbox expiry 30d.
+CREATE TABLE IF NOT EXISTS voice_notes (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  sender_uid TEXT NOT NULL,
+  r2_key TEXT NOT NULL,
+  dropbox_path TEXT NOT NULL DEFAULT '',
+  duration_s INTEGER NOT NULL DEFAULT 0,
+  mime TEXT NOT NULL DEFAULT 'audio/ogg;codecs=opus',
+  dropbox_status TEXT NOT NULL DEFAULT 'pending', -- pending | archived | expired | failed
+  created_at INTEGER NOT NULL,
+  expires_r2_at INTEGER NOT NULL,      -- created_at + 24h
+  expires_dropbox_at INTEGER NOT NULL  -- created_at + 30d
+);
+CREATE INDEX IF NOT EXISTS idx_voice_thread ON voice_notes(thread_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_voice_expiry ON voice_notes(expires_r2_at, expires_dropbox_at);
