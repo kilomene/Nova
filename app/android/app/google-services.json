@@ -1,0 +1,4 @@
+{
+  "PLACEHOLDER": true,
+  "_comment": "Replace this file with the real google-services.json from the Firebase console (project Nova, Android app package com.nova.app). See docs/SETUP.md. The app FAILS CLOSED without it (demo mode). This placeholder is intentionally invalid so a missing config can never be mistaken for a working one."
+}
