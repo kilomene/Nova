@@ -1724,6 +1724,135 @@ export default {
         }
         return json({ uid, handle }, 201);
       }
+      // Bot fleet: BULK provision (thousands), admin key only. No email flow.
+      if (path === '/api/admin/bots/bulk' && method === 'POST') {
+        await adminGuard(request, env);
+        const b = await readJson(request) as Record<string, unknown>;
+        const count = vInt(b.count ?? 1, 'count', 1, 5000);
+        const prefix = vOptStr(b.prefix, 'prefix', 24) || 'nova_bot';
+        const fleetId = vOptStr(b.fleetId, 'fleetId', 64) || '';
+        const t = now();
+        const created: Array<{ uid: string; handle: string }> = [];
+        for (let i = 0; i < count; i++) {
+          const uid = `bot_${newId()}`;
+          const handle = `${prefix}_${t.toString(36)}_${i}`;
+          await env.DB.prepare('INSERT INTO users (uid, handle, display_name, is_bot, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)').bind(uid, handle, handle, t, t).run();
+          created.push({ uid, handle });
+          if (fleetId) {
+            await env.DB.prepare('INSERT OR IGNORE INTO bot_fleet_members (fleet_id, bot_uid, added_at) VALUES (?, ?, ?)').bind(fleetId, uid, t).run();
+          }
+        }
+        return json({ count: created.length, bots: created.slice(0, 100) }, 201);
+      }
+      // Fleet console: list bots (paginated, labeled).
+      if (path === '/api/admin/fleet/bots' && method === 'GET') {
+        await adminGuard(request, env);
+        const fleetId = url.searchParams.get('fleetId');
+        const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
+        const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
+        let rows;
+        if (fleetId) {
+          rows = await env.DB.prepare(
+            `SELECT u.uid, u.handle, u.display_name, u.created_at FROM users u
+             JOIN bot_fleet_members m ON m.bot_uid = u.uid
+             WHERE m.fleet_id = ? AND u.is_bot = 1 ORDER BY u.created_at DESC LIMIT ? OFFSET ?`
+          ).bind(fleetId, limit, offset).all();
+        } else {
+          rows = await env.DB.prepare(
+            'SELECT uid, handle, display_name, created_at FROM users WHERE is_bot = 1 ORDER BY created_at DESC LIMIT ? OFFSET ?'
+          ).bind(limit, offset).all();
+        }
+        return json({ bots: rows.results, limit, offset });
+      }
+      // Fleet console: create fleet.
+      if (path === '/api/admin/fleet/fleets' && method === 'POST') {
+        await adminGuard(request, env);
+        const b = await readJson(request) as Record<string, unknown>;
+        const name = vStr(b.name, 'name', 1, 60);
+        const description = vOptStr(b.description, 'description', 200) || '';
+        const id = newId();
+        const t = now();
+        await env.DB.prepare('INSERT INTO bot_fleets (id, name, description, created_at) VALUES (?, ?, ?, ?)').bind(id, name, description, t).run();
+        return json({ id, name }, 201);
+      }
+      if (path === '/api/admin/fleet/fleets' && method === 'GET') {
+        await adminGuard(request, env);
+        const rows = await env.DB.prepare(
+          `SELECT f.*, (SELECT COUNT(*) FROM bot_fleet_members m WHERE m.fleet_id = f.id) AS bot_count
+           FROM bot_fleets f ORDER BY f.created_at DESC LIMIT 100`
+        ).all();
+        return json({ fleets: rows.results });
+      }
+      // Fleet console: create mission + dispatch to bots/fleet.
+      if (path === '/api/admin/fleet/missions' && method === 'POST') {
+        await adminGuard(request, env);
+        const b = await readJson(request) as Record<string, unknown>;
+        const title = vStr(b.title, 'title', 1, 120);
+        const taskType = vStr(b.taskType, 'taskType', 1, 40);
+        const payload = typeof b.payload === 'object' && b.payload ? JSON.stringify(b.payload) : '{}';
+        const targetKind = vOptStr(b.targetKind, 'targetKind', 10) || 'bots';
+        if (!['bots', 'fleet', 'all'].includes(targetKind)) throw httpError(400, 'bad_target_kind');
+        const targetFleetId = vOptStr(b.targetFleetId, 'targetFleetId', 64) || '';
+        const botUids = Array.isArray(b.botUids) ? b.botUids.filter((u): u is string => typeof u === 'string').slice(0, 5000) : [];
+        const id = newId();
+        const t = now();
+        await env.DB.prepare(
+          'INSERT INTO fleet_missions (id, title, task_type, payload, target_kind, target_fleet_id, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(id, title, taskType, payload, targetKind, targetFleetId || null, 'pending', 'agent', t, t).run();
+        // Resolve targets.
+        let targets: string[] = [];
+        if (targetKind === 'fleet' && targetFleetId) {
+          const rows = await env.DB.prepare('SELECT bot_uid FROM bot_fleet_members WHERE fleet_id = ?').bind(targetFleetId).all<{ bot_uid: string }>();
+          targets = rows.results.map(r => r.bot_uid);
+        } else if (targetKind === 'all') {
+          const rows = await env.DB.prepare('SELECT uid FROM users WHERE is_bot = 1 LIMIT 10000').all<{ uid: string }>();
+          targets = rows.results.map(r => r.uid);
+        } else {
+          targets = botUids;
+        }
+        const batch = targets.map(uid =>
+          env.DB.prepare('INSERT INTO fleet_assignments (id, mission_id, bot_uid, status, created_at) VALUES (?, ?, ?, ?, ?)')
+            .bind(newId(), id, uid, 'queued', t)
+        );
+        // D1 batch in chunks of 100.
+        for (let i = 0; i < batch.length; i += 100) {
+          await env.DB.batch(batch.slice(i, i + 100));
+        }
+        await env.DB.prepare("UPDATE fleet_missions SET status = 'dispatched', updated_at = ? WHERE id = ?").bind(now(), id).run();
+        return json({ id, assigned: targets.length }, 201);
+      }
+      // Fleet console: mission status + results.
+      {
+        const m = path.match(/^\/api\/admin\/fleet\/missions\/([^/]+)$/);
+        if (m && method === 'GET') {
+          await adminGuard(request, env);
+          const mid = vStr(m[1], 'missionId', 1, 64);
+          const mission = await env.DB.prepare('SELECT * FROM fleet_missions WHERE id = ?').bind(mid).first();
+          if (!mission) throw httpError(404, 'mission_not_found');
+          const summary = await env.DB.prepare(
+            'SELECT status, COUNT(*) AS n FROM fleet_assignments WHERE mission_id = ? GROUP BY status'
+          ).bind(mid).all<{ status: string; n: number }>();
+          const results = await env.DB.prepare(
+            "SELECT bot_uid, status, result, error, completed_at FROM fleet_assignments WHERE mission_id = ? AND status IN ('done','failed') ORDER BY completed_at DESC LIMIT 200"
+          ).bind(mid).all();
+          return json({ mission, summary: summary.results, results: results.results });
+        }
+      }
+      // Bot self-report: assignment result (bot uid from its own token; admin key for now in v1).
+      if (path === '/api/admin/fleet/assignments/complete' && method === 'POST') {
+        await adminGuard(request, env);
+        const b = await readJson(request) as Record<string, unknown>;
+        const assignmentId = vStr(b.assignmentId, 'assignmentId', 1, 64);
+        const status = vOptStr(b.status, 'status', 10) || 'done';
+        if (!['done', 'failed', 'skipped'].includes(status)) throw httpError(400, 'bad_status');
+        const result = typeof b.result === 'object' && b.result ? JSON.stringify(b.result) : (vOptStr(b.result as string, 'result', 20000) || '');
+        const error = vOptStr(b.error, 'error', 2000) || '';
+        const t = now();
+        await env.DB.prepare(
+          "UPDATE fleet_assignments SET status = ?, result = ?, error = ?, completed_at = ? WHERE id = ?"
+        ).bind(status, result, error, t, assignmentId).run();
+        return json({ ok: true });
+      }
       if (path === '/api/admin/sellers' && method === 'GET') {
         await adminGuard(request, env);
         const status = vOptStr(url.searchParams.get('status'), 'status', 20) || 'pending';
