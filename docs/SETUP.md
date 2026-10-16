@@ -34,6 +34,21 @@ wrangler secret put DROPBOX_ACCESS_TOKEN      # Dropbox API token for voice-call
 # (get from Dropbox App Console; wired later — recordings stay in R2 until then)
 ```
 
+### Bot fleet console (admin key, `X-Admin-Key` header)
+Bots are a TASK-EXECUTION fleet (thousands), not engagement bots. All bots are
+visibly labeled BOT in UI — they are workers, never fake users.
+```
+POST /api/admin/bots              # single bot {handle, displayName}
+POST /api/admin/bots/bulk         # bulk provision {count: 1..5000, prefix, fleetId}
+GET  /api/admin/fleet/bots        # list bots (?fleetId, limit, offset)
+POST /api/admin/fleet/fleets      # create fleet {name, description}
+GET  /api/admin/fleet/fleets      # list fleets with bot counts
+POST /api/admin/fleet/missions    # create + dispatch mission
+                                   # {title, taskType, payload, targetKind: bots|fleet|all, targetFleetId, botUids}
+GET  /api/admin/fleet/missions/:id # mission status summary + per-bot results
+POST /api/admin/fleet/assignments/complete  # bot self-reports result {assignmentId, status, result, error}
+```
+
 ### Voice notes lifecycle
 - Format: Opus (Ogg), client-side encoded before upload.
 - R2 `nova-media`: hot storage, **auto-deleted 24h after upload** (fast playback).
