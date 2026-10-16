@@ -1,0 +1,39 @@
+name = "nova-api"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+# ---- Fill these in after `wrangler d1 create nova-db` / `wrangler r2 bucket create nova-media` ----
+[[d1_databases]]
+binding = "DB"
+database_name = "nova-db"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "nova-media"
+
+[durable_objects]
+bindings = [
+  { name = "SYNC", class_name = "SyncHub" },
+  { name = "RATELIMIT", class_name = "RateLimit" },
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SyncHub"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["RateLimit"]
+
+[vars]
+# Firebase project id used to verify ID tokens. MUST be set for auth to work.
+FIREBASE_PROJECT_ID = "REPLACE_WITH_FIREBASE_PROJECT_ID"
+APP_ORIGIN = "https://nova.example"
+
+# ---- Secrets (set with `wrangler secret put <NAME>`, NEVER commit) ----
+# FLUTTERWAVE_SECRET_KEY   - Flutterwave v3 secret key (server-side payments)
+# FLUTTERWAVE_SECRET_HASH  - value compared against the webhook `verif-hash` header
+# FIREBASE_SERVICE_ACCOUNT - JSON of a Firebase service-account key (for FCM v1 sends)
+# MEDIA_SIGNING_SECRET     - HMAC key for short-lived signed media URLs
+# ADMIN_REVIEW_KEY         - bearer for the manual KYC review endpoint
