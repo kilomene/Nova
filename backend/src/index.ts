@@ -1083,6 +1083,52 @@ export default {
         }
       }
 
+      // ---------- voice notes (1-on-1 DMs; Opus; R2 24h -> Dropbox 30d) ----------
+      if (path === '/api/voice-notes' && method === 'POST') {
+        const uid = await guard(request, env, 30);
+        const b = await readJson(request) as Record<string, unknown>;
+        const threadId = vStr(b.threadId, 'threadId', 1, 64);
+        const thread = await env.DB.prepare('SELECT user_a, user_b FROM threads WHERE id = ?').bind(threadId)
+          .first<{ user_a: string; user_b: string }>();
+        if (!thread) throw httpError(404, 'thread_not_found');
+        if (thread.user_a !== uid && thread.user_b !== uid) throw httpError(403, 'not_a_party');
+        const r2Key = vStr(b.r2Key, 'r2Key', 1, 300);
+        const durationS = vInt(b.durationS ?? 0, 'durationS', 1, 600); // max 10 min
+        const id = newId();
+        const t = now();
+        const dropboxPath = `/Nova/voice-notes/${id}.ogg`;
+        // Async Dropbox archive (best-effort; R2 is the hot path).
+        let dbStatus = 'pending';
+        try {
+          const obj = await env.MEDIA.get(r2Key);
+          if (obj && env.DROPBOX_ACCESS_TOKEN) {
+            await recordingStore(env.DROPBOX_ACCESS_TOKEN).upload(`${id}.ogg`, await obj.arrayBuffer(), dropboxPath);
+            dbStatus = 'archived';
+          }
+        } catch { dbStatus = 'failed'; }
+        await env.DB.prepare(
+          'INSERT INTO voice_notes (id, thread_id, sender_uid, r2_key, dropbox_path, duration_s, dropbox_status, created_at, expires_r2_at, expires_dropbox_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(id, threadId, uid, r2Key, dropboxPath, durationS, dbStatus, t, t + 86400_000, t + 30 * 86400_000).run();
+        const peer = thread.user_a === uid ? thread.user_b : thread.user_a;
+        await publishToUser(env, peer, { type: 'voice_note', threadId, noteId: id, durationS });
+        return json({ id, dropboxStatus: dbStatus }, 201);
+      }
+      {
+        const m = path.match(/^\/api\/voice-notes\/thread\/([^/]+)$/);
+        if (m && method === 'GET') {
+          const uid = await guard(request, env);
+          const tid = vStr(m[1], 'threadId', 1, 64);
+          const thread = await env.DB.prepare('SELECT user_a, user_b FROM threads WHERE id = ?').bind(tid)
+            .first<{ user_a: string; user_b: string }>();
+          if (!thread) throw httpError(404, 'thread_not_found');
+          if (thread.user_a !== uid && thread.user_b !== uid) throw httpError(403, 'not_a_party');
+          const rows = await env.DB.prepare(
+            'SELECT id, sender_uid, duration_s, created_at FROM voice_notes WHERE thread_id = ? AND expires_r2_at > ? ORDER BY created_at DESC LIMIT 50'
+          ).bind(tid, now()).all();
+          return json({ notes: rows.results });
+        }
+      }
+
       // ---------- P2P ----------
       if (path === '/api/p2p/offers' && method === 'GET') {
         await guard(request, env);
@@ -1878,6 +1924,40 @@ export default {
         return json({ error: 'internal_error' }, 500);
       }
       return json({ error: err.message || 'bad_request' }, status);
+    }
+  },
+
+  // Daily cleanup: voice-note lifecycle.
+  // - R2 copies older than 24h are deleted (hot storage expiry).
+  // - Dropbox copies older than 30d are deleted via the Dropbox API.
+  async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
+    const t = now();
+    // Expire R2 hot copies.
+    const stale = await env.DB.prepare(
+      'SELECT id, r2_key FROM voice_notes WHERE expires_r2_at <= ? AND r2_key != ? LIMIT 100'
+    ).bind(t, '').all<{ id: string; r2_key: string }>();
+    for (const r of stale.results) {
+      try { await env.MEDIA.delete(r.r2_key); } catch { /* already gone */ }
+      await env.DB.prepare("UPDATE voice_notes SET r2_key = '' WHERE id = ?").bind(r.id).run();
+    }
+    // Expire Dropbox archive copies.
+    if (env.DROPBOX_ACCESS_TOKEN) {
+      const old = await env.DB.prepare(
+        "SELECT id, dropbox_path FROM voice_notes WHERE expires_dropbox_at <= ? AND dropbox_status = 'archived' LIMIT 100"
+      ).bind(t).all<{ id: string; dropbox_path: string }>();
+      for (const r of old.results) {
+        try {
+          await fetch('https://api.dropboxapi.com/2/files/delete_v2', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${env.DROPBOX_ACCESS_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ path: r.dropbox_path }),
+          });
+          await env.DB.prepare("UPDATE voice_notes SET dropbox_status = 'expired' WHERE id = ?").bind(r.id).run();
+        } catch { /* retry tomorrow */ }
+      }
     }
   },
 };
