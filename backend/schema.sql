@@ -375,7 +375,8 @@ CREATE INDEX IF NOT EXISTS idx_support_uid ON support_tickets(uid, updated_at DE
 
 -- ============ Auth: username login, TOTP 2FA, official account ============
 -- Username login (username -> email resolution for Firebase sign-in).
-ALTER TABLE users ADD COLUMN username TEXT UNIQUE;
+ALTER TABLE users ADD COLUMN username TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
 -- Official company account (@nova): auto-verified (free), auto-followed,
 -- cannot be blocked or reported.
 ALTER TABLE users ADD COLUMN is_official INTEGER NOT NULL DEFAULT 0;
@@ -446,3 +447,72 @@ VALUES ('nova_official', 'nova', 'nova', 'NOVA', 'The official NOVA account. Upd
 
 -- Email for username->email login resolution (Firebase holds the password).
 ALTER TABLE users ADD COLUMN email TEXT;
+
+-- ============ Marketplace reviews (verified-purchase ONLY) ============
+-- A review may only be written by a user holding a COMPLETED order
+-- (delivered/completed, not cancelled/refunded/disputed-lost) for that
+-- product from that seller. Enforced server-side on insert.
+CREATE TABLE IF NOT EXISTS reviews (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  product_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  seller_uid TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+  reviewer_uid TEXT NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  title TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  UNIQUE(order_id)  -- one review per order
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_reviews_seller ON reviews(seller_uid, created_at DESC);
+
+-- ============ Order disputes ============
+-- Buyer/seller disputes with evidence upload; admin resolution queue.
+CREATE TABLE IF NOT EXISTS disputes (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  opener_uid TEXT NOT NULL,
+  reason TEXT NOT NULL,  -- not_received | damaged | wrong_item | fraud | other
+  description TEXT NOT NULL DEFAULT '',
+  evidence_keys TEXT NOT NULL DEFAULT '[]',  -- JSON array of R2 keys
+  status TEXT NOT NULL DEFAULT 'open',  -- open | investigating | resolved_buyer | resolved_seller | closed
+  resolution_note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_disputes_order ON disputes(order_id);
+CREATE INDEX IF NOT EXISTS idx_disputes_status ON disputes(status, created_at DESC);
+
+-- ============ Shipments ============
+-- Shipping provider abstraction: manual flow in v1 (seller enters carrier +
+-- tracking number); carrier adapters (EasyPost/Shippo-style) are stubbed
+-- interfaces awaiting his business partnership + API keys (see docs/SETUP.md).
+CREATE TABLE IF NOT EXISTS shipments (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  carrier TEXT NOT NULL DEFAULT '',       -- e.g. 'DHL', 'UPS', 'manual'
+  tracking_number TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'label_created',  -- label_created | in_transit | out_for_delivery | delivered
+  events TEXT NOT NULL DEFAULT '[]',      -- JSON array of {ts, status, note}
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shipments_order ON shipments(order_id);
+-- ============ Voice call recordings ============
+-- DM voice calls are VOICE ONLY (no video in v1). Every call is automatically
+-- recorded; the recording uploads to the owner's Dropbox via the backend.
+-- Storage interface is pluggable; Dropbox token wired via Workers secret.
+CREATE TABLE IF NOT EXISTS call_recordings (
+  id TEXT PRIMARY KEY,
+  caller_uid TEXT NOT NULL,
+  callee_uid TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER NOT NULL DEFAULT 0,
+  duration_s INTEGER NOT NULL DEFAULT 0,
+  r2_key TEXT NOT NULL DEFAULT '',       -- raw upload in R2 (transient)
+  dropbox_path TEXT NOT NULL DEFAULT '', -- final path in Dropbox
+  upload_status TEXT NOT NULL DEFAULT 'pending', -- pending | uploaded | failed
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_calls_users ON call_recordings(caller_uid, callee_uid, created_at DESC);
