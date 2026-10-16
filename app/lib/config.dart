@@ -3,7 +3,7 @@
 // seeded data and clear "demo" labeling in Settings.
 
 class AppConfig {
-  static const String apiBaseUrl = '';
+  static const String apiBaseUrl = 'https://nova-api.ayiijumo.workers.dev';
 
   static bool get demoMode => apiBaseUrl.isEmpty;
 
