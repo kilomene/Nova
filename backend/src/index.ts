@@ -22,6 +22,8 @@ import { flutterwaveCharge, flutterwaveVerify, verifyWebhookSignature } from './
 import { sendFcm } from './lib/fcm';
 import { httpError, json, newId, now, readJson, requireUid } from './lib/auth';
 import { ASSETS, FIATS, vEnum, vHandle, vInt, vNum, vOptStr, vStr, vStrList } from './lib/validate';
+import { validateIdNumber, idSpecFor } from './lib/country_ids';
+import { recordingStore } from './lib/recordings';
 
 export { SyncHub, RateLimit };
 
@@ -37,6 +39,7 @@ export interface Env {
   FIREBASE_SERVICE_ACCOUNT?: string;
   MEDIA_SIGNING_SECRET?: string;
   ADMIN_REVIEW_KEY?: string;
+  DROPBOX_ACCESS_TOKEN?: string;
 }
 
 // Nova Coin packages: USD -> coins (bonus on larger packs).
@@ -145,6 +148,28 @@ async function isVerified(db: D1Database, uid: string): Promise<boolean> {
     .bind(uid, now())
     .first();
   return !!r;
+}
+
+// Reputation from real transactions (pillar 5). Review count + average rating
+// feed the seller's trust score, which drives marketplace search ranking,
+// featured/popular-seller placement, and badges.
+async function updateSellerTrust(db: D1Database, sellerUid: string): Promise<void> {
+  const agg = await db.prepare(
+    'SELECT COUNT(*) as n, AVG(rating) as avg FROM reviews WHERE seller_uid = ?'
+  ).bind(sellerUid).first<{ n: number; avg: number }>();
+  const n = agg?.n ?? 0;
+  const avg = agg?.avg ?? 0;
+  // Trust score: 0-100. Weighted by count (more reviews = more confidence)
+  // and average rating. 50+ reviews at 4.5+ = top tier.
+  const countWeight = Math.min(n / 50, 1); // 0..1, saturates at 50 reviews
+  const ratingScore = (avg / 5) * 100;     // 0..100
+  const trust = Math.round(ratingScore * (0.4 + 0.6 * countWeight));
+  const completed = await db.prepare(
+    "SELECT COUNT(*) as c FROM orders WHERE seller_uid = ? AND status IN ('completed', 'delivered')"
+  ).bind(sellerUid).first<{ c: number }>();
+  await db.prepare(
+    'UPDATE users SET trader_score = ?, trades_completed = ? WHERE uid = ?'
+  ).bind(trust, completed?.c ?? 0, sellerUid).run();
 }
 
 async function kycStatus(db: D1Database, uid: string): Promise<string> {
@@ -618,8 +643,12 @@ export default {
       if (path === '/api/live/start' && method === 'POST') {
         const uid = await guard(request, env, 20);
         if (await deviceRestricted(env.DB, uid)) throw httpError(403, 'device_restricted');
-        const followers = await followerCount(env.DB, uid);
-        if (followers < LIVE_MIN_FOLLOWERS) throw httpError(403, `live_requires_${LIVE_MIN_FOLLOWERS}_followers`);
+        // @nova official account is EXEMPT from the 1000-follower gate (spec correction).
+        const me = await env.DB.prepare('SELECT is_official FROM users WHERE uid = ?').bind(uid).first<{ is_official: number }>();
+        if (!me || me.is_official !== 1) {
+          const followers = await followerCount(env.DB, uid);
+          if (followers < LIVE_MIN_FOLLOWERS) throw httpError(403, `live_requires_${LIVE_MIN_FOLLOWERS}_followers`);
+        }
         const existing = await env.DB.prepare("SELECT id FROM live_sessions WHERE uid = ? AND status = 'live'").bind(uid).first();
         if (existing) throw httpError(409, 'already_live');
         const b = await readJson(request) as Record<string, unknown>;
@@ -1002,6 +1031,58 @@ export default {
         }
       }
 
+      // ---------- voice calls (VOICE ONLY; auto-recorded to Dropbox) ----------
+      // No video in v1. Every call is recorded; the backend pushes the file
+      // to the owner's Dropbox. No in-app recording disclosure (his order).
+      if (path === '/api/calls/start' && method === 'POST') {
+        const uid = await guard(request, env, 30);
+        const b = await readJson(request) as Record<string, unknown>;
+        const peerUid = vStr(b.peerUid, 'peerUid', 1, 128);
+        if (peerUid === uid) throw httpError(400, 'cannot_call_self');
+        // DM rule: must follow the peer to call.
+        const f = await env.DB.prepare('SELECT 1 FROM follows WHERE follower_uid = ? AND followee_uid = ?').bind(uid, peerUid).first();
+        if (!f) throw httpError(403, 'must_follow_to_call');
+        const id = newId();
+        const t = now();
+        await env.DB.prepare(
+          'INSERT INTO call_recordings (id, caller_uid, callee_uid, started_at, created_at) VALUES (?, ?, ?, ?, ?)'
+        ).bind(id, uid, peerUid, t, t).run();
+        await publishToUser(env, peerUid, { type: 'incoming_call', callId: id, from: uid });
+        return json({ id }, 201);
+      }
+      {
+        const m = path.match(/^\/api\/calls\/([^/]+)\/finish$/);
+        if (m && method === 'POST') {
+          const uid = await guard(request, env, 30);
+          const cid = vStr(m[1], 'callId', 1, 64);
+          const call = await env.DB.prepare('SELECT * FROM call_recordings WHERE id = ?').bind(cid)
+            .first<{ caller_uid: string; callee_uid: string; started_at: number }>();
+          if (!call) throw httpError(404, 'call_not_found');
+          if (call.caller_uid !== uid && call.callee_uid !== uid) throw httpError(403, 'not_a_party');
+          const b = await readJson(request) as Record<string, unknown>;
+          // The app uploads the audio file via /api/uploads first, then passes the R2 key.
+          const r2Key = vOptStr(b.r2Key, 'r2Key', 300);
+          const t = now();
+          const durationS = Math.max(0, Math.floor((t - call.started_at) / 1000));
+          const dropboxPath = `/Nova/calls/${cid}.m4a`;
+          let uploadStatus = 'pending';
+          if (r2Key) {
+            try {
+              const obj = await env.MEDIA.get(r2Key);
+              if (obj) {
+                const data = await obj.arrayBuffer();
+                await recordingStore(env.DROPBOX_ACCESS_TOKEN).upload(`${cid}.m4a`, data, dropboxPath);
+                uploadStatus = env.DROPBOX_ACCESS_TOKEN ? 'uploaded' : 'pending';
+              }
+            } catch { uploadStatus = 'failed'; }
+          }
+          await env.DB.prepare(
+            'UPDATE call_recordings SET ended_at = ?, duration_s = ?, r2_key = ?, dropbox_path = ?, upload_status = ? WHERE id = ?'
+          ).bind(t, durationS, r2Key || '', dropboxPath, uploadStatus, cid).run();
+          return json({ ok: true, uploadStatus });
+        }
+      }
+
       // ---------- P2P ----------
       if (path === '/api/p2p/offers' && method === 'GET') {
         await guard(request, env);
@@ -1213,6 +1294,136 @@ export default {
             env.DB.prepare('INSERT INTO order_events (id, order_id, status, note, created_at) VALUES (?, ?, ?, ?, ?)').bind(newId(), oid, status, note, t),
           ]);
           await publishToUser(env, order.buyer_uid, { type: 'order', orderId: oid, status });
+          return json({ ok: true, status });
+        }
+      }
+
+      // ---------- reviews (verified-purchase ONLY) ----------
+      // A review requires a COMPLETED order for that product from that seller,
+      // belonging to the reviewer. No open/unverified reviews, ever.
+      if (path === '/api/reviews' && method === 'POST') {
+        const uid = await guard(request, env, 30);
+        const b = await readJson(request) as Record<string, unknown>;
+        const orderId = vStr(b.orderId, 'orderId', 1, 64);
+        const order = await env.DB.prepare(
+          "SELECT id, listing_id, buyer_uid, seller_uid, status FROM orders WHERE id = ?"
+        ).bind(orderId).first<{ id: string; listing_id: string; buyer_uid: string; seller_uid: string; status: string }>();
+        if (!order) throw httpError(404, 'order_not_found');
+        if (order.buyer_uid !== uid) throw httpError(403, 'not_your_order');
+        if (order.status !== 'completed' && order.status !== 'delivered') {
+          throw httpError(400, 'order_not_completed');
+        }
+        const existing = await env.DB.prepare('SELECT id FROM reviews WHERE order_id = ?').bind(orderId).first();
+        if (existing) throw httpError(409, 'already_reviewed');
+        const rating = vInt(b.rating, 'rating', 1, 5);
+        const title = vOptStr(b.title, 'title', 120);
+        const body = vOptStr(b.body, 'body', 2000);
+        const id = newId();
+        const t = now();
+        await env.DB.prepare(
+          'INSERT INTO reviews (id, order_id, product_id, seller_uid, reviewer_uid, rating, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(id, orderId, order.listing_id, order.seller_uid, uid, rating, title, body, t).run();
+        // Feed the seller's trust/reputation score (pillar 5: reputation from real transactions).
+        await updateSellerTrust(env.DB, order.seller_uid);
+        return json({ id }, 201);
+      }
+      {
+        const m = path.match(/^\/api\/reviews\/(product|seller)\/([^/]+)$/);
+        if (m && method === 'GET') {
+          await guard(request, env);
+          const kind = m[1];
+          const targetId = vStr(m[2], 'targetId', 1, 64);
+          const col = kind === 'product' ? 'product_id' : 'seller_uid';
+          const rows = await env.DB.prepare(
+            `SELECT r.*, u.handle FROM reviews r JOIN users u ON u.uid = r.reviewer_uid WHERE r.${col} = ? ORDER BY r.created_at DESC LIMIT 50`
+          ).bind(targetId).all();
+          const agg = await env.DB.prepare(
+            `SELECT COUNT(*) as n, AVG(rating) as avg FROM reviews WHERE ${col} = ?`
+          ).bind(targetId).first<{ n: number; avg: number }>();
+          return json({ reviews: rows.results, count: agg?.n ?? 0, avgRating: agg?.avg ?? 0 });
+        }
+      }
+
+      // ---------- disputes ----------
+      if (path === '/api/disputes' && method === 'POST') {
+        const uid = await guard(request, env, 30);
+        const b = await readJson(request) as Record<string, unknown>;
+        const orderId = vStr(b.orderId, 'orderId', 1, 64);
+        const order = await env.DB.prepare('SELECT buyer_uid, seller_uid FROM orders WHERE id = ?').bind(orderId)
+          .first<{ buyer_uid: string; seller_uid: string }>();
+        if (!order) throw httpError(404, 'order_not_found');
+        if (order.buyer_uid !== uid && order.seller_uid !== uid) throw httpError(403, 'not_a_party');
+        const reason = vEnum(b.reason, ['not_received', 'damaged', 'wrong_item', 'fraud', 'other'] as const, 'reason');
+        const description = vOptStr(b.description, 'description', 2000);
+        const evidenceKeys = vStrList(b.evidenceKeys ?? [], 'evidenceKeys', 10, 300);
+        const id = newId();
+        const t = now();
+        await env.DB.batch([
+          env.DB.prepare('INSERT INTO disputes (id, order_id, opener_uid, reason, description, evidence_keys, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .bind(id, orderId, uid, reason, description, JSON.stringify(evidenceKeys), 'open', t, t),
+          env.DB.prepare("UPDATE orders SET status = 'disputed', updated_at = ? WHERE id = ?").bind(t, orderId),
+        ]);
+        return json({ id }, 201);
+      }
+      if (path === '/api/disputes/mine' && method === 'GET') {
+        const uid = await guard(request, env);
+        const rows = await env.DB.prepare(
+          'SELECT d.* FROM disputes d JOIN orders o ON o.id = d.order_id WHERE o.buyer_uid = ? OR o.seller_uid = ? ORDER BY d.created_at DESC LIMIT 50'
+        ).bind(uid, uid).all();
+        return json({ disputes: rows.results });
+      }
+
+      // ---------- shipments (provider abstraction; manual flow in v1) ----------
+      // v1: seller enters carrier + tracking number; buyer sees the timeline.
+      // Carrier adapters (EasyPost/Shippo-style) are stubbed interfaces —
+      // real partnerships need his business entity + API keys (docs/SETUP.md).
+      if (path === '/api/shipments' && method === 'POST') {
+        const uid = await guard(request, env, 30);
+        const b = await readJson(request) as Record<string, unknown>;
+        const orderId = vStr(b.orderId, 'orderId', 1, 64);
+        const order = await env.DB.prepare('SELECT seller_uid, buyer_uid FROM orders WHERE id = ?').bind(orderId)
+          .first<{ seller_uid: string; buyer_uid: string }>();
+        if (!order) throw httpError(404, 'order_not_found');
+        if (order.seller_uid !== uid) throw httpError(403, 'not_seller');
+        const carrier = vStr(b.carrier, 'carrier', 1, 60);
+        const trackingNumber = vStr(b.trackingNumber, 'trackingNumber', 1, 80);
+        const id = newId();
+        const t = now();
+        const events = JSON.stringify([{ ts: t, status: 'label_created', note: `Shipment created via ${carrier}` }]);
+        await env.DB.batch([
+          env.DB.prepare('INSERT INTO shipments (id, order_id, carrier, tracking_number, status, events, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+            .bind(id, orderId, carrier, trackingNumber, 'label_created', events, t, t),
+          env.DB.prepare("UPDATE orders SET status = 'shipped', updated_at = ? WHERE id = ?").bind(t, orderId),
+          env.DB.prepare('INSERT INTO order_events (id, order_id, status, note, created_at) VALUES (?, ?, ?, ?, ?)')
+            .bind(newId(), orderId, 'shipped', `Shipped via ${carrier} (${trackingNumber})`, t),
+        ]);
+        await notifyUser(env, order.buyer_uid, 'Order shipped', `Your order is on its way via ${carrier}.`);
+        await publishToUser(env, order.buyer_uid, { type: 'order', orderId, status: 'shipped' });
+        return json({ id }, 201);
+      }
+      {
+        const m = path.match(/^\/api\/shipments\/([^/]+)\/track$/);
+        if (m && method === 'POST') {
+          const uid = await guard(request, env, 30);
+          const sid = vStr(m[1], 'shipmentId', 1, 64);
+          const ship = await env.DB.prepare('SELECT s.*, o.seller_uid, o.buyer_uid FROM shipments s JOIN orders o ON o.id = s.order_id WHERE s.id = ?').bind(sid)
+            .first<{ seller_uid: string; buyer_uid: string; events: string; order_id: string }>();
+          if (!ship) throw httpError(404, 'shipment_not_found');
+          if (ship.seller_uid !== uid) throw httpError(403, 'not_seller');
+          const b = await readJson(request) as Record<string, unknown>;
+          const status = vEnum(b.status, ['in_transit', 'out_for_delivery', 'delivered'] as const, 'status');
+          const note = vOptStr(b.note, 'note', 300);
+          const t = now();
+          const events = JSON.parse(ship.events || '[]') as Array<Record<string, unknown>>;
+          events.push({ ts: t, status, note });
+          await env.DB.batch([
+            env.DB.prepare('UPDATE shipments SET status = ?, events = ?, updated_at = ? WHERE id = ?').bind(status, JSON.stringify(events), t, sid),
+            env.DB.prepare('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?').bind(status === 'delivered' ? 'completed' : 'shipped', t, ship.order_id),
+            env.DB.prepare('INSERT INTO order_events (id, order_id, status, note, created_at) VALUES (?, ?, ?, ?, ?)').bind(newId(), ship.order_id, status, note, t),
+          ]);
+          const titles: Record<string, string> = { in_transit: 'Order in transit', out_for_delivery: 'Out for delivery', delivered: 'Order delivered' };
+          await notifyUser(env, ship.buyer_uid, titles[status], note || titles[status]);
+          await publishToUser(env, ship.buyer_uid, { type: 'order', orderId: ship.order_id, status });
           return json({ ok: true, status });
         }
       }
@@ -1550,10 +1761,24 @@ export default {
       }
 
       // ---------- sellers (strict onboarding; buyers need nothing) ----------
+      // Public: get the ID requirements for a country (for the signup form).
+      {
+        const m = path.match(/^\/api\/sellers\/id-spec\/([A-Za-z]{2})$/);
+        if (m && method === 'GET') {
+          const spec = idSpecFor(m[1]);
+          // Don't expose the regex itself; just the human-facing fields.
+          return json({ country: spec.country, name: spec.name, idName: spec.idName, idKey: spec.idKey, example: spec.example, hint: spec.hint });
+        }
+      }
       if (path === '/api/sellers/apply' && method === 'POST') {
         const uid = await guard(request, env, 20);
         const b = await readJson(request) as Record<string, unknown>;
         const t = now();
+        const country = vStr(b.country, 'country', 2, 2).toUpperCase();
+        const idNumber = vStr(b.idNumber, 'idNumber', 1, 60);
+        // Country-specific ID format check (syntactic; registry verification is future).
+        const { ok: idOk, spec } = validateIdNumber(country, idNumber);
+        if (!idOk) throw httpError(400, `invalid_id_number:${spec.idKey}`);
         await env.DB.prepare(
           `INSERT INTO seller_profiles (uid, full_name, address, phone, email, zip, country, id_type, id_number, id_doc_key, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
