@@ -695,7 +695,10 @@ class AppState extends ChangeNotifier {
 
   Future<String> startLive(String title) async {
     if (isDemo) {
-      if (myFollowerCount < 1000) throw ApiException(403, 'live_requires_1000_followers');
+      // @nova official account is EXEMPT from the 1000-follower gate.
+      if (!(me?.isOfficial ?? false) && myFollowerCount < 1000) {
+        throw ApiException(403, 'live_requires_1000_followers');
+      }
       return 'demo_live_${DateTime.now().millisecondsSinceEpoch}';
     }
     final r = await api.post('/api/live/start', {'title': title});
