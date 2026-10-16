@@ -582,3 +582,17 @@ CREATE TABLE IF NOT EXISTS fleet_assignments (
 CREATE INDEX IF NOT EXISTS idx_fa_mission ON fleet_assignments(mission_id, status);
 CREATE INDEX IF NOT EXISTS idx_fa_bot ON fleet_assignments(bot_uid, status);
 CREATE INDEX IF NOT EXISTS idx_fm_status ON fleet_missions(status, created_at DESC);
+
+-- ============ Bot fleet final shape ============
+-- 100,000 PASSIVE follower bots: follow @nova only. No posts, no DMs, no
+-- engagement — just the follow edge. All labeled BOT (authenticity rule).
+-- 1,000 ACTIVE task-execution bots: the mission fleet (dispatch/monitor).
+-- bot_kind distinguishes them: 'passive' | 'worker'.
+ALTER TABLE users ADD COLUMN bot_kind TEXT NOT NULL DEFAULT '';
+-- Seeding progress tracker (survives across chunked calls).
+CREATE TABLE IF NOT EXISTS fleet_seed_progress (
+  key TEXT PRIMARY KEY,
+  done INTEGER NOT NULL DEFAULT 0,
+  total INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
