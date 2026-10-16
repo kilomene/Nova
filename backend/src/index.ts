@@ -1718,31 +1718,83 @@ export default {
         const uid = `bot_${newId()}`;
         const t = now();
         try {
-          await env.DB.prepare('INSERT INTO users (uid, handle, display_name, is_bot, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)').bind(uid, handle, displayName, t, t).run();
+          await env.DB.prepare("INSERT INTO users (uid, handle, display_name, is_bot, bot_kind, created_at, updated_at) VALUES (?, ?, ?, 1, 'worker', ?, ?)").bind(uid, handle, displayName, t, t).run();
         } catch {
           throw httpError(409, 'handle_taken');
         }
         return json({ uid, handle }, 201);
       }
       // Bot fleet: BULK provision (thousands), admin key only. No email flow.
+      // Chunked: batch up to 2000 per call; D1-batched inserts (no timeouts).
       if (path === '/api/admin/bots/bulk' && method === 'POST') {
         await adminGuard(request, env);
         const b = await readJson(request) as Record<string, unknown>;
-        const count = vInt(b.count ?? 1, 'count', 1, 5000);
+        const count = vInt(b.count ?? 100, 'count', 1, 2000);
         const prefix = vOptStr(b.prefix, 'prefix', 24) || 'nova_bot';
         const fleetId = vOptStr(b.fleetId, 'fleetId', 64) || '';
         const t = now();
-        const created: Array<{ uid: string; handle: string }> = [];
+        const stmts: D1PreparedStatement[] = [];
+        const uids: string[] = [];
         for (let i = 0; i < count; i++) {
           const uid = `bot_${newId()}`;
           const handle = `${prefix}_${t.toString(36)}_${i}`;
-          await env.DB.prepare('INSERT INTO users (uid, handle, display_name, is_bot, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)').bind(uid, handle, handle, t, t).run();
-          created.push({ uid, handle });
+          uids.push(uid);
+          stmts.push(
+            env.DB.prepare("INSERT INTO users (uid, handle, display_name, is_bot, bot_kind, created_at, updated_at) VALUES (?, ?, ?, 1, 'worker', ?, ?)")
+              .bind(uid, handle, handle, t, t)
+          );
           if (fleetId) {
-            await env.DB.prepare('INSERT OR IGNORE INTO bot_fleet_members (fleet_id, bot_uid, added_at) VALUES (?, ?, ?)').bind(fleetId, uid, t).run();
+            stmts.push(
+              env.DB.prepare('INSERT OR IGNORE INTO bot_fleet_members (fleet_id, bot_uid, added_at) VALUES (?, ?, ?)').bind(fleetId, uid, t)
+            );
           }
         }
-        return json({ count: created.length, bots: created.slice(0, 100) }, 201);
+        for (let i = 0; i < stmts.length; i += 100) {
+          await env.DB.batch(stmts.slice(i, i + 100));
+        }
+        return json({ count, uids: uids.slice(0, 10) }, 201);
+      }
+      // Bot fleet FINAL SHAPE: 100k passive follower bots for @nova.
+      // Chunked: the agent calls repeatedly (batch up to 2000) until done.
+      // Each bot gets ONE follow edge -> nova_official. No posts, no DMs.
+      if (path === '/api/admin/fleet/followers/seed' && method === 'POST') {
+        await adminGuard(request, env);
+        const b = await readJson(request) as Record<string, unknown>;
+        const batch = vInt(b.batch ?? 1000, 'batch', 1, 2000);
+        const total = vInt(b.total ?? 100000, 'total', 1, 1000000);
+        const t = now();
+        const prog = await env.DB.prepare("SELECT done FROM fleet_seed_progress WHERE key = 'nova_followers'").first<{ done: number }>();
+        const start = prog?.done || 0;
+        if (start >= total) return json({ done: start, total, complete: true });
+        const end = Math.min(start + batch, total);
+        const stmts: D1PreparedStatement[] = [];
+        for (let i = start; i < end; i++) {
+          const uid = `botf_${newId()}`;
+          // Unique handle: index + random suffix (survives progress desync).
+          const handle = `nova_fan_${String(i).padStart(6, '0')}_${newId().slice(0, 6)}`;
+          stmts.push(
+            env.DB.prepare("INSERT OR IGNORE INTO users (uid, handle, display_name, is_bot, bot_kind, created_at, updated_at) VALUES (?, ?, ?, 1, 'passive', ?, ?)")
+              .bind(uid, handle, handle, t, t),
+            env.DB.prepare('INSERT OR IGNORE INTO follows (follower_uid, followee_uid, created_at) VALUES (?, ?, ?)')
+              .bind(uid, 'nova_official', t)
+          );
+        }
+        // D1 batch: single call with all statements (2000 max per batch).
+        // Split into 2 calls of 1000 statements if needed.
+        for (let i = 0; i < stmts.length; i += 1000) {
+          await env.DB.batch(stmts.slice(i, i + 1000));
+        }
+        await env.DB.prepare(
+          "INSERT INTO fleet_seed_progress (key, done, total, updated_at) VALUES ('nova_followers', ?, ?, ?) ON CONFLICT(key) DO UPDATE SET done = ?, total = ?, updated_at = ?"
+        ).bind(end, total, t, end, total, t).run();
+        return json({ done: end, total, complete: end >= total, created: end - start }, 201);
+      }
+      if (path === '/api/admin/fleet/followers/progress' && method === 'GET') {
+        await adminGuard(request, env);
+        const prog = await env.DB.prepare("SELECT * FROM fleet_seed_progress WHERE key = 'nova_followers'").first();
+        const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE is_bot = 1 AND bot_kind = 'passive'").first<{ n: number }>();
+        const follows = await env.DB.prepare("SELECT COUNT(*) AS n FROM follows WHERE followee_uid = 'nova_official'").first<{ n: number }>();
+        return json({ progress: prog, passiveBots: count?.n || 0, novaFollowers: follows?.n || 0 });
       }
       // Fleet console: list bots (paginated, labeled).
       if (path === '/api/admin/fleet/bots' && method === 'GET') {
