@@ -1,0 +1,1 @@
+{"dependencies":{"jose":"^6.0.0"},"devDependencies":{"@cloudflare/workers-types":"^5.20261006.1","typescript":"^5.8.3","wrangler":"^4.0.0"},"name":"nova-api","private":true,"scripts":{"db:apply":"wrangler d1 execute nova-db --file=./schema.sql","deploy":"wrangler deploy","dev":"wrangler dev"},"type":"module","version":"0.1.0"}
