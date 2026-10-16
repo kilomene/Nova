@@ -18,27 +18,31 @@ upgrades one subsystem to production.
    `wrangler secret put FIREBASE_SERVICE_ACCOUNT` (paste the whole JSON).
 6. Rebuild the APK after adding the real `google-services.json`.
 
-## 2. Cloudflare (API + database + storage + realtime)
+## 2. Cloudflare (API + database + storage + realtime) — ✅ LIVE
 
+**Deployed 2026-10-16.** Worker: `https://nova-api.ayiijumo.workers.dev`
+- D1 database `nova-db`: `5edd78ba-2e77-4520-a8bb-31072133175d` (schema applied)
+- R2 bucket `nova-media` (created)
+- Secrets set: `FLUTTERWAVE_SECRET_KEY`, `FLUTTERWAVE_ENCRYPTION_KEY`,
+  `FIREBASE_SERVICE_ACCOUNT`, `MEDIA_SIGNING_SECRET`, `ADMIN_REVIEW_KEY`
+
+Remaining manual item:
+```bash
+wrangler secret put FLUTTERWAVE_SECRET_HASH   # from Flutterwave dashboard → Settings → Webhooks
+# (verifies the `verif-hash` header on payment webhooks)
+wrangler secret put DROPBOX_ACCESS_TOKEN      # Dropbox API token for voice-call recordings
+# (get from Dropbox App Console; wired later — recordings stay in R2 until then)
+```
+
+For reference (fresh setup):
 ```bash
 cd backend
 npm install
-wrangler login
-wrangler d1 create nova-db        # paste database_id into wrangler.toml
-wrangler r2 bucket create nova-media
 wrangler d1 execute nova-db --file=./schema.sql
-# point FIREBASE_PROJECT_ID at your Firebase project id in wrangler.toml
-wrangler secret put FLUTTERWAVE_SECRET_KEY
-wrangler secret put FLUTTERWAVE_SECRET_HASH   # from Flutterwave dashboard → Settings → Webhooks
-wrangler secret put FIREBASE_SERVICE_ACCOUNT  # JSON from step 1.5
-wrangler secret put MEDIA_SIGNING_SECRET      # `openssl rand -hex 32`
-wrangler secret put ADMIN_REVIEW_KEY          # `openssl rand -hex 32` — protects the manual KYC review endpoint
 wrangler deploy
 ```
 
-7. Copy the deployed Worker URL (e.g.
-   `https://nova-api.<you>.workers.dev`) into `app/lib/config.dart`
-   (`apiBaseUrl`), rebuild the APK.
+7. `app/lib/config.dart` (`apiBaseUrl`) already points at the live Worker.
 
 ## 3. Flutterwave (fiat payments)
 
@@ -88,7 +92,28 @@ flutter build apk --release \
 (plus the standard `android/key.properties` wiring — documented in
 `app/android/app/build.gradle` comments.)
 
-## 6. Checklist before inviting real users
+## 6. Shipping partners (for real carrier integrations)
+
+v1 ships with the **manual flow**: seller enters carrier + tracking number,
+buyer sees the timeline in-app. This works today with zero partnerships.
+
+For live carrier rates/labels/tracking (phase 2), you need:
+
+1. **A signed business entity** (the user signs as company rep).
+2. **Carrier/aggregator accounts** with API keys:
+   - Aggregators: EasyPost (easypost.com) or Shippo (goshippo.com) —
+     one integration covers 100+ carriers.
+   - Or direct: DHL, UPS, FedEx developer portals.
+3. Add the API key as a Workers secret (e.g. `wrangler secret put
+   EASYPOST_API_KEY`), then implement the adapter in
+   `backend/src/lib/shipping.ts` behind the existing
+   `createShipment / getRates / track` interface.
+
+The abstraction layer is in the backend; the manual flow keeps working
+as the fallback. **Do not claim a live carrier integration until the
+business paperwork + keys are in place.**
+
+## 7. Checklist before inviting real users
 
 - [ ] Real `google-services.json` in place, Firebase Auth providers enabled
       (Email + Anonymous — anonymous keeps logged-out browsing authed)
