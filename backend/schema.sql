@@ -536,3 +536,49 @@ CREATE TABLE IF NOT EXISTS voice_notes (
 );
 CREATE INDEX IF NOT EXISTS idx_voice_thread ON voice_notes(thread_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_voice_expiry ON voice_notes(expires_r2_at, expires_dropbox_at);
+
+-- ============ Bot fleet (task-execution, NOT engagement bots) ============
+-- Thousands of bot accounts, provisioned via admin-key-only endpoints.
+-- No email/password flow; internal IDs. All bots labeled as bots in UI.
+-- The owner assigns missions; the agent dispatches tasks to the fleet.
+CREATE TABLE IF NOT EXISTS bot_fleets (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+-- Fleet membership: bot_uid references users(uid) with is_bot=1.
+CREATE TABLE IF NOT EXISTS bot_fleet_members (
+  fleet_id TEXT NOT NULL REFERENCES bot_fleets(id) ON DELETE CASCADE,
+  bot_uid TEXT NOT NULL,
+  added_at INTEGER NOT NULL,
+  PRIMARY KEY (fleet_id, bot_uid)
+);
+-- Missions: task definitions assigned to bots or whole fleets.
+CREATE TABLE IF NOT EXISTS fleet_missions (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  task_type TEXT NOT NULL,              -- e.g. 'scrape', 'summarize', 'moderate', 'transcribe', 'custom'
+  payload TEXT NOT NULL DEFAULT '{}',   -- JSON task parameters
+  target_kind TEXT NOT NULL DEFAULT 'bots', -- 'bots' | 'fleet' | 'all'
+  target_fleet_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | dispatched | running | completed | cancelled
+  created_by TEXT NOT NULL DEFAULT 'agent',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+-- Per-bot assignments: one row per bot per mission.
+CREATE TABLE IF NOT EXISTS fleet_assignments (
+  id TEXT PRIMARY KEY,
+  mission_id TEXT NOT NULL REFERENCES fleet_missions(id) ON DELETE CASCADE,
+  bot_uid TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued', -- queued | running | done | failed | skipped
+  result TEXT NOT NULL DEFAULT '',        -- JSON result payload
+  error TEXT NOT NULL DEFAULT '',
+  started_at INTEGER NOT NULL DEFAULT 0,
+  completed_at INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fa_mission ON fleet_assignments(mission_id, status);
+CREATE INDEX IF NOT EXISTS idx_fa_bot ON fleet_assignments(bot_uid, status);
+CREATE INDEX IF NOT EXISTS idx_fm_status ON fleet_missions(status, created_at DESC);
