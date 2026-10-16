@@ -1,0 +1,28 @@
+# Secrets & credentials — NEVER commit these
+google-services.json
+GoogleService-Info.plist
+*.jks
+*.keystore
+key.properties
+.env
+*.env
+**/service-account*.json
+**/*serviceAccount*.json
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+.idea/
+*.iml
+
+# Cloudflare
+.dev.vars
+.wrangler/
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
