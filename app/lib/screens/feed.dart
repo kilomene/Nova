@@ -1,0 +1,475 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
+
+import '../models.dart';
+import '../state/app_state.dart';
+import '../widgets/gifts.dart';
+import 'hashtag.dart';
+import 'profile.dart';
+import 'promote.dart';
+import 'report.dart';
+import 'shell.dart';
+
+/// TikTok-style vertical feed: Following | For You tabs, full-screen
+/// swipeable videos, right action rail, double-tap to like.
+class FeedScreen extends StatefulWidget {
+  const FeedScreen({super.key});
+
+  @override
+  State<FeedScreen> createState() => _FeedScreenState();
+}
+
+class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateMixin {
+  late final TabController _tabs;
+  final ValueNotifier<int> _currentIndex = ValueNotifier(0);
+  bool _following = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabs = TabController(length: 2, vsync: this);
+    _tabs.addListener(() {
+      final f = _tabs.index == 0;
+      if (f != _following) {
+        setState(() {
+          _following = f;
+          _currentIndex.value = 0;
+        });
+        context.read<AppState>().loadFeed(following: f);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    _currentIndex.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        title: TabBar(
+          controller: _tabs,
+          isScrollable: true,
+          indicatorColor: const Color(0xFFFFC107),
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white54,
+          tabs: const [Tab(text: 'Following'), Tab(text: 'For You')],
+        ),
+        actions: const [LiveEntryButton()],
+      ),
+      body: Consumer<AppState>(
+        builder: (context, state, _) {
+          if (state.feedLoading && state.feed.isEmpty) {
+            return const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)));
+          }
+          if (state.feed.isEmpty) {
+            return const Center(
+              child: Text('No videos yet — be the first to upload.', style: TextStyle(color: Colors.white54)),
+            );
+          }
+          return PageView.builder(
+            scrollDirection: Axis.vertical,
+            itemCount: state.feed.length,
+            onPageChanged: (i) {
+              _currentIndex.value = i;
+              state.recordView(state.feed[i]);
+            },
+            itemBuilder: (context, i) => VideoCard(video: state.feed[i], currentIndex: _currentIndex, index: i),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class VideoCard extends StatefulWidget {
+  final NovaVideo video;
+  final ValueNotifier<int> currentIndex;
+  final int index;
+  const VideoCard({super.key, required this.video, required this.currentIndex, required this.index});
+
+  @override
+  State<VideoCard> createState() => _VideoCardState();
+}
+
+class _VideoCardState extends State<VideoCard> {
+  VideoPlayerController? _c;
+  bool _showHeart = false;
+  bool _saved = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+    widget.currentIndex.addListener(_onIndex);
+  }
+
+  void _onIndex() {
+    final active = widget.currentIndex.value == widget.index;
+    if (_c == null || !_c!.value.isInitialized) return;
+    if (active) {
+      _c!.play();
+    } else {
+      _c!.pause();
+    }
+  }
+
+  Future<void> _init() async {
+    try {
+      final url = widget.video.mediaUrl;
+      _c = url.startsWith('http') ? VideoPlayerController.networkUrl(Uri.parse(url)) : VideoPlayerController.file(File(url));
+      await _c!.initialize();
+      _c!.setLooping(true);
+      if (widget.currentIndex.value == widget.index && mounted) _c!.play();
+      if (mounted) setState(() {});
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Video unavailable');
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.currentIndex.removeListener(_onIndex);
+    _c?.dispose();
+    super.dispose();
+  }
+
+  void _doubleTapLike() {
+    final state = context.read<AppState>();
+    if (!widget.video.likedByMe) state.toggleLike(widget.video);
+    setState(() => _showHeart = true);
+    Future.delayed(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() => _showHeart = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final v = widget.video;
+    return GestureDetector(
+      onDoubleTap: _doubleTapLike,
+      onTap: () {
+        if (_c != null && _c!.value.isInitialized) {
+          setState(() => _c!.value.isPlaying ? _c!.pause() : _c!.play());
+        }
+      },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (_c != null && _c!.value.isInitialized)
+            FittedBox(fit: BoxFit.cover, child: SizedBox(width: _c!.value.size.width, height: _c!.value.size.height, child: VideoPlayer(_c!)))
+          else
+            Container(
+              color: const Color(0xFF111111),
+              child: Center(
+                child: _error != null
+                    ? Text(_error!, style: const TextStyle(color: Colors.white54))
+                    : const CircularProgressIndicator(color: Color(0xFFFFC107)),
+              ),
+            ),
+          if (_showHeart)
+            const Center(child: Icon(Icons.favorite, size: 110, color: Colors.redAccent)),
+          // right action rail
+          Positioned(
+            right: 8,
+            bottom: 90,
+            child: Column(
+              children: [
+                GestureDetector(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => ProfileScreen(uid: v.uid, handle: v.handle)),
+                  ),
+                  child: CircleAvatar(
+                    radius: 24,
+                    backgroundColor: Colors.white24,
+                    backgroundImage: v.avatarUrl.isNotEmpty ? NetworkImage(v.avatarUrl) : null,
+                    child: v.avatarUrl.isEmpty ? Text(v.handle.isNotEmpty ? v.handle[0].toUpperCase() : '?') : null,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _RailButton(
+                  icon: v.likedByMe ? Icons.favorite : Icons.favorite_border,
+                  color: v.likedByMe ? Colors.redAccent : Colors.white,
+                  label: _fmt(v.likeCount),
+                  onTap: () => state.toggleLike(v),
+                ),
+                _RailButton(
+                  icon: Icons.chat_bubble_outline,
+                  label: _fmt(v.commentCount),
+                  onTap: () => showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => CommentsSheet(video: v),
+                  ),
+                ),
+                _RailButton(
+                  icon: _saved ? Icons.bookmark : Icons.bookmark_border,
+                  color: _saved ? const Color(0xFFFFC107) : Colors.white,
+                  label: 'Save',
+                  onTap: () => setState(() => _saved = !_saved),
+                ),
+                _RailButton(
+                  icon: Icons.share_outlined,
+                  label: _fmt(v.shareCount),
+                  onTap: () async {
+                    await Clipboard.setData(ClipboardData(text: 'Nova video by @${v.handle}: ${v.caption}'));
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied')));
+                    }
+                  },
+                ),
+                _RailButton(
+                  icon: Icons.more_vert,
+                  label: 'More',
+                  onTap: () => showModalBottomSheet(
+                    context: context,
+                    backgroundColor: const Color(0xFF1a1a1a),
+                    builder: (_) => SafeArea(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ListTile(
+                            leading: const Icon(Icons.flag_outlined, color: Colors.redAccent),
+                            title: const Text('Report video', style: TextStyle(color: Colors.white)),
+                            onTap: () {
+                              Navigator.of(context).pop();
+                              showReportDialog(context, targetType: 'video', targetId: v.id);
+                            },
+                          ),
+                          if (v.uid == state.me?.uid)
+                            ListTile(
+                              leading: const Icon(Icons.rocket_launch_outlined, color: Color(0xFFFFC107)),
+                              title: const Text('Promote video', style: TextStyle(color: Colors.white)),
+                              subtitle: const Text('Boost in For You · from \$7/day',
+                                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+                              onTap: () {
+                                Navigator.of(context).pop();
+                                Navigator.of(context).push(MaterialPageRoute(
+                                    builder: (_) => PromoteScreen(videoId: v.id)));
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // bottom caption block
+          Positioned(
+            left: 12,
+            right: 80,
+            bottom: 24,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => ProfileScreen(uid: v.uid, handle: v.handle)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('@${v.handle}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                      if (v.promoted) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFC107).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFFFFC107), width: 1),
+                          ),
+                          child: const Text('Promoted',
+                              style: TextStyle(color: Color(0xFFFFC107), fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                if (v.caption.isNotEmpty) HashtagText(v.caption, maxLines: 2),
+                if (v.hashtags.isNotEmpty)
+                  Wrap(
+                    spacing: 6,
+                    children: [for (final h in v.hashtags) HashtagChip(tag: h)],
+                  ),
+                if (v.soundLabel.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.music_note, size: 14, color: Colors.white70),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(v.soundLabel, style: const TextStyle(color: Colors.white70, fontSize: 12), overflow: TextOverflow.ellipsis),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fmt(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return '$n';
+  }
+}
+
+class _RailButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color color;
+  const _RailButton({required this.icon, required this.label, required this.onTap, this.color = Colors.white});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 30),
+            const SizedBox(height: 2),
+            Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Comments bottom sheet.
+class CommentsSheet extends StatefulWidget {
+  final NovaVideo video;
+  const CommentsSheet({super.key, required this.video});
+
+  @override
+  State<CommentsSheet> createState() => _CommentsSheetState();
+}
+
+class _CommentsSheetState extends State<CommentsSheet> {
+  final _ctrl = TextEditingController();
+  List<VideoComment> _comments = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      _comments = await context.read<AppState>().fetchComments(widget.video.id);
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.65,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (context, scroll) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF161616),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text('${widget.video.commentCount} comments', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
+                  : ListView.builder(
+                      controller: scroll,
+                      itemCount: _comments.length,
+                      itemBuilder: (context, i) {
+                        final c = _comments[i];
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.white24,
+                            backgroundImage: c.avatarUrl.isNotEmpty ? NetworkImage(c.avatarUrl) : null,
+                            child: c.avatarUrl.isEmpty ? Text(c.handle.isNotEmpty ? c.handle[0].toUpperCase() : '?') : null,
+                          ),
+                          title: Row(
+                            children: [
+                              Text(c.handle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                              if (c.isVerified) ...[const SizedBox(width: 4), const VerifiedBadge(size: 13)],
+                            ],
+                          ),
+                          subtitle: Text(c.text, style: const TextStyle(color: Colors.white70)),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.flag_outlined, size: 16, color: Colors.white38),
+                            onPressed: () => showReportDialog(context, targetType: 'comment', targetId: c.id),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            Padding(
+              padding: EdgeInsets.only(left: 12, right: 12, bottom: MediaQuery.of(context).viewInsets.bottom + 12, top: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _ctrl,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        hintText: 'Add a comment…',
+                        hintStyle: TextStyle(color: Colors.white38),
+                        filled: true,
+                        fillColor: Color(0xFF242424),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20)), borderSide: BorderSide.none),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.send, color: Color(0xFFFFC107)),
+                    onPressed: () async {
+                      final t = _ctrl.text.trim();
+                      if (t.isEmpty) return;
+                      _ctrl.clear();
+                      await context.read<AppState>().addComment(widget.video, t);
+                      _load();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
