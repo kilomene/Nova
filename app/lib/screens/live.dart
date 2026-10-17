@@ -114,6 +114,7 @@ class _LiveListScreenState extends State<LiveListScreen> {
                       children: [
                         Expanded(child: Text(s.title.isEmpty ? '@${s.handle} is live' : s.title, style: const TextStyle(color: Colors.white))),
                         if (s.isVerified) ...[const SizedBox(width: 4), VerifiedBadge(size: 14, type: s.verificationType)],
+                        if (s.affiliatedWith != null) ...[const SizedBox(width: 4), AffiliateBadge(avatarUrl: s.affiliatedWith!.avatarUrl, size: 14)],
                       ],
                     ),
                     subtitle: Text('@${s.handle} · ${s.viewerCount} watching', style: const TextStyle(color: Colors.white54)),
