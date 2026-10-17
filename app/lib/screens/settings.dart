@@ -103,7 +103,7 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => _pickTheme(context, state),
           ),
           Divider(color: faint12),
-          const _Header('Money'),
+          _Header('Money'),
           _Row(
             icon: Icons.monetization_on_outlined,
             title: 'Nova Coins',
@@ -123,7 +123,7 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SellerOnboardingScreen())),
           ),
           Divider(color: faint12),
-          const _Header('Trust & safety'),
+          _Header('Trust & safety'),
           _Row(
             icon: Icons.gavel_outlined,
             title: 'Strikes & account status',
@@ -137,7 +137,7 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SupportScreen())),
           ),
           Divider(color: faint12),
-          const _Header('Network & security'),
+          _Header('Network & security'),
           _Row(
             icon: Icons.cloud_outlined,
             title: 'Network',
@@ -171,7 +171,7 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           Divider(color: faint12),
-          const _Header('About'),
+          _Header('About'),
           _Row(icon: Icons.info_outline, title: 'Nova', subtitle: 'v0.1.0 · clean-room TikTok-style build'),
           _Row(
             icon: Icons.logout,
@@ -217,7 +217,7 @@ class SettingsScreen extends StatelessWidget {
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(), child: Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
             onPressed: () async {
               final u = c.text.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9_]'), '');
               if (u.isEmpty) return;
