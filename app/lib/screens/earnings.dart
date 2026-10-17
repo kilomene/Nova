@@ -230,7 +230,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                   backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: Colors.black),
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary),
               onPressed: () {
                 if (bank == null) {
                   setD(() => bankError = 'Select your bank.');
@@ -335,7 +335,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                   backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: Colors.black),
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary),
               onPressed: verifying
                   ? null
                   : () async {
@@ -435,7 +435,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                     backgroundColor: gold,
-                    foregroundColor: Colors.black,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 14)),
                 onPressed:
                     state.isDemo || _loading ? null : _withdraw,
@@ -483,7 +483,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
                     color: (p['status'] == 'processing' ||
                             p['status'] == 'completed')
                         ? Colors.green.withValues(alpha: 0.15)
-                        : Colors.amber.withValues(alpha: 0.15),
+                        : Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -494,7 +494,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
                     color: (p['status'] == 'processing' ||
                             p['status'] == 'completed')
                         ? Colors.green
-                        : Colors.amber,
+                        : Theme.of(context).colorScheme.primary,
                   ),
                 ),
                 title: Text(
