@@ -54,6 +54,12 @@ class ApiException implements Exception {
         return 'No account found with that username or email.';
       case 'invalid_code':
         return 'That code is incorrect. Try again.';
+      case 'totp_not_set_up':
+        return 'Two-factor setup was interrupted. Go back and scan the code again.';
+      case 'totp_setup_empty':
+        return 'The server did not return a setup code. Please try again.';
+      case 'unknown_identifier':
+        return 'No account found with that username.';
       case 'invalid_email':
       case 'email_invalid':
         return 'Enter a valid email address.';
