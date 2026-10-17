@@ -22,8 +22,6 @@ import '../widgets/nova_filters.dart';
 import 'hashtag.dart';
 import 'live.dart';
 
-const _gold = Color(0xFFFFC107);
-
 /// Maximum gallery video length: 2:00 (user spec).
 const _maxGalleryVideoSecs = 120;
 
@@ -181,7 +179,7 @@ class CreateEffectsScreen extends StatelessWidget {
                   child: Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: _gold.withValues(alpha: 0.35)),
+                      border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)),
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(13),
@@ -576,13 +574,13 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.videocam_outlined, color: _gold),
-              title: const Text('Video (up to 2:00)',
+              leading: Icon(Icons.videocam_outlined, color: Theme.of(context).colorScheme.primary),
+              title: Text('Video (up to 2:00)',
                   style: TextStyle(color: Colors.white)),
               onTap: () => Navigator.of(context).pop('video'),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_outlined, color: _gold),
+              leading: Icon(Icons.photo_outlined, color: Theme.of(context).colorScheme.primary),
               title: const Text('Photo',
                   style: TextStyle(color: Colors.white)),
               onTap: () => Navigator.of(context).pop('photo'),
@@ -677,8 +675,8 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
   Widget _buildPreview() {
     Widget child;
     if (_initializing) {
-      child = const Center(
-          child: CircularProgressIndicator(color: _gold));
+      child = Center(
+          child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary));
     } else if (_error != null) {
       child = Center(
         child: Padding(
@@ -692,11 +690,11 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
               Text(_error!,
                   textAlign: TextAlign.center,
                   style:
-                      const TextStyle(color: Colors.white54, fontSize: 13)),
-              const SizedBox(height: 12),
+                      TextStyle(color: Colors.white54, fontSize: 13)),
+              SizedBox(height: 12),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: _gold, foregroundColor: Colors.black),
+                    backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
                 onPressed: _initCamera,
                 child: const Text('Retry'),
               ),
@@ -812,11 +810,11 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
         child: Column(
           children: [
             Icon(icon,
-                color: active ? _gold : Colors.white, size: 26),
-            const SizedBox(height: 2),
+                color: active ? Theme.of(context).colorScheme.primary : Colors.white, size: 26),
+            SizedBox(height: 2),
             Text(label,
                 style: TextStyle(
-                    color: active ? _gold : Colors.white,
+                    color: active ? Theme.of(context).colorScheme.primary : Colors.white,
                     fontSize: 10)),
           ],
         ),
@@ -854,11 +852,11 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
         return GestureDetector(
           onTap: () => setState(() => _durationIndex = i),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: EdgeInsets.symmetric(horizontal: 10),
             child: Text(
               _durationLabels[i],
               style: TextStyle(
-                color: selected ? _gold : Colors.white60,
+                color: selected ? Theme.of(context).colorScheme.primary : Colors.white60,
                 fontSize: selected ? 15 : 13,
                 fontWeight:
                     selected ? FontWeight.bold : FontWeight.normal,
@@ -1093,12 +1091,12 @@ class _SoundPickerScreenState extends State<SoundPickerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         leading: IconButton(
-            icon: const Icon(Icons.close, color: Colors.white),
+            icon: Icon(Icons.close, color: Colors.white),
             onPressed: () => Navigator.of(context).pop()),
-        title: const Text('Add sound', style: TextStyle(color: Colors.white)),
+        title: Text('Add sound', style: TextStyle(color: Colors.white)),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _gold))
+          ? Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary))
           : _error != null
               ? Center(
                   child: Column(
@@ -1106,11 +1104,11 @@ class _SoundPickerScreenState extends State<SoundPickerScreen> {
                     children: [
                       Text('Could not load sounds.\n$_error',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.white54)),
-                      const SizedBox(height: 12),
+                          style: TextStyle(color: Colors.white54)),
+                      SizedBox(height: 12),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                            backgroundColor: _gold,
+                            backgroundColor: Theme.of(context).colorScheme.primary,
                             foregroundColor: Colors.black),
                         onPressed: () {
                           setState(() {
@@ -1153,7 +1151,7 @@ class _SoundPickerScreenState extends State<SoundPickerScreen> {
                             _playingKey == s['audioKey']
                                 ? Icons.stop_circle_outlined
                                 : Icons.play_circle_outline,
-                            color: _gold,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                           onPressed: () => _togglePreview(s),
                         ),
@@ -1267,8 +1265,8 @@ class _TextPostScreenState extends State<TextPostScreen> {
           TextButton(
             onPressed: _busy ? null : _next,
             child: Text(_busy ? '…' : 'Next',
-                style: const TextStyle(
-                    color: _gold,
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
                     fontSize: 16,
                     fontWeight: FontWeight.bold)),
           ),
@@ -1326,7 +1324,7 @@ class _TextPostScreenState extends State<TextPostScreen> {
                     gradient: LinearGradient(colors: _bgs[i]),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                        color: i == _bgIndex ? _gold : Colors.white24,
+                        color: i == _bgIndex ? Theme.of(context).colorScheme.primary : Colors.white24,
                         width: i == _bgIndex ? 2.5 : 1),
                   ),
                 ),
@@ -1818,7 +1816,7 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
                   color: Colors.white,
                   fontSize: 16,
                   fontWeight: FontWeight.w600),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Add a catchy title',
                 hintStyle: TextStyle(color: Colors.white38),
                 border: UnderlineInputBorder(
@@ -1826,7 +1824,7 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
                 enabledBorder: UnderlineInputBorder(
                     borderSide: BorderSide(color: Colors.white24)),
                 focusedBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: _gold)),
+                    borderSide: BorderSide(color: Theme.of(context).colorScheme.primary)),
               ),
             ),
             const SizedBox(height: 8),
@@ -1836,7 +1834,7 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
               maxLines: 4,
               maxLength: 500,
               style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText:
                     'Write a description… long descriptions get more views on average.',
                 hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
@@ -1844,7 +1842,7 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
                 enabledBorder: OutlineInputBorder(
                     borderSide: BorderSide(color: Colors.white24)),
                 focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: _gold)),
+                    borderSide: BorderSide(color: Theme.of(context).colorScheme.primary)),
               ),
             ),
             const SizedBox(height: 8),
@@ -1866,8 +1864,8 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.music_note,
-                              color: _gold, size: 16),
+                          Icon(Icons.music_note,
+                              color: Theme.of(context).colorScheme.primary, size: 16),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(widget.soundLabel,
@@ -1895,10 +1893,10 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
               value: _rightsAffirmed,
               onChanged: (v) =>
                   setState(() => _rightsAffirmed = v ?? false),
-              title: const Text(
+              title: Text(
                   'I own or have rights to this content.',
                   style: TextStyle(color: Colors.white70, fontSize: 12)),
-              activeColor: _gold,
+              activeColor: Theme.of(context).colorScheme.primary,
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
             ),
@@ -1957,10 +1955,10 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
               aspectRatio: _preview!.value.aspectRatio,
               child: VideoPlayer(_preview!),
             )
-          : const SizedBox(
+          : SizedBox(
               height: 320,
               child: Center(
-                  child: CircularProgressIndicator(color: _gold)));
+                  child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary)));
     } else {
       media = Image.file(File(widget.filePath),
           height: 320, width: double.infinity, fit: BoxFit.cover);
@@ -2024,18 +2022,18 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
               height: 64,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _gold, width: 1.5),
+                border: Border.all(color: Theme.of(context).colorScheme.primary, width: 1.5),
                 color: const Color(0xFF1a1a1a),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(7),
                 child: _coverLoading
-                    ? const Center(
+                    ? Center(
                         child: SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(
-                                color: _gold, strokeWidth: 2)))
+                                color: Theme.of(context).colorScheme.primary, strokeWidth: 2)))
                     : (_coverBytes != null
                         ? Image.memory(_coverBytes!, fit: BoxFit.cover)
                         : const Center(
@@ -2055,7 +2053,7 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
           Slider(
             value: _coverMs.clamp(0, totalMs),
             max: totalMs,
-            activeColor: _gold,
+            activeColor: Theme.of(context).colorScheme.primary,
             inactiveColor: Colors.white24,
             onChanged: (v) => _generateCover(v),
           ),
@@ -2170,15 +2168,15 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
       String value, IconData icon, String title, String sub) {
     final sel = _visibility == value;
     return ListTile(
-      leading: Icon(icon, color: sel ? _gold : Colors.white70),
+      leading: Icon(icon, color: sel ? Theme.of(context).colorScheme.primary : Colors.white70),
       title: Text(title,
           style: TextStyle(
-              color: sel ? _gold : Colors.white,
+              color: sel ? Theme.of(context).colorScheme.primary : Colors.white,
               fontWeight: sel ? FontWeight.bold : FontWeight.normal)),
       subtitle:
-          Text(sub, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          Text(sub, style: TextStyle(color: Colors.white54, fontSize: 12)),
       trailing: sel
-          ? const Icon(Icons.check_circle, color: _gold)
+          ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary)
           : null,
       onTap: () => Navigator.of(context).pop(value),
     );
@@ -2206,19 +2204,19 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
           SwitchListTile(
             value: _allowComments,
             onChanged: (v) => setState(() => _allowComments = v),
-            title: const Text('Allow comments',
+            title: Text('Allow comments',
                 style: TextStyle(color: Colors.white, fontSize: 14)),
-            activeThumbColor: _gold,
+            activeThumbColor: Theme.of(context).colorScheme.primary,
             contentPadding: EdgeInsets.zero,
           ),
           SwitchListTile(
             value: _tagProducts,
             onChanged: (v) => setState(() => _tagProducts = v),
-            title: const Text('Identify similar products',
+            title: Text('Identify similar products',
                 style: TextStyle(color: Colors.white, fontSize: 14)),
-            subtitle: const Text('Let viewers shop similar items',
+            subtitle: Text('Let viewers shop similar items',
                 style: TextStyle(color: Colors.white54, fontSize: 12)),
-            activeThumbColor: _gold,
+            activeThumbColor: Theme.of(context).colorScheme.primary,
             contentPadding: EdgeInsets.zero,
           ),
           ListTile(
@@ -2258,20 +2256,20 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
                       fontWeight: FontWeight.bold)),
             ),
             ListTile(
-              title: const Text('Everyone',
+              title: Text('Everyone',
                   style: TextStyle(color: Colors.white)),
               trailing: _audienceControl == 'everyone'
-                  ? const Icon(Icons.check_circle, color: _gold)
+                  ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary)
                   : null,
               onTap: () => Navigator.of(context).pop('everyone'),
             ),
             ListTile(
-              title: const Text('18+ only',
+              title: Text('18+ only',
                   style: TextStyle(color: Colors.white)),
-              subtitle: const Text('Restrict to adult audiences',
+              subtitle: Text('Restrict to adult audiences',
                   style: TextStyle(color: Colors.white54, fontSize: 12)),
               trailing: _audienceControl == '18+'
-                  ? const Icon(Icons.check_circle, color: _gold)
+                  ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary)
                   : null,
               onTap: () => Navigator.of(context).pop('18+'),
             ),
@@ -2327,12 +2325,12 @@ class _DraftsScreenState extends State<DraftsScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            icon: Icon(Icons.arrow_back, color: Colors.white),
             onPressed: () => Navigator.of(context).pop()),
-        title: const Text('Drafts', style: TextStyle(color: Colors.white)),
+        title: Text('Drafts', style: TextStyle(color: Colors.white)),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _gold))
+          ? Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary))
           : _drafts.isEmpty
               ? const Center(
                   child: Text('No drafts yet.',
