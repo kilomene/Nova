@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.nova.app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     buildToolsVersion = "36.1.0"
     ndkVersion = flutter.ndkVersion
 
