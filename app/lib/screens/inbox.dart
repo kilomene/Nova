@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models.dart';
+import '../services/api_client.dart';
 import '../state/app_state.dart';
 
 /// Inbox: conversation threads.
@@ -276,7 +277,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sent! Tx: ${hash.substring(0, 18)}…')));
                         }
                       } catch (e) {
-                        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Send failed: $e')));
+                        final msg = e is ApiException ? e.message : 'Send failed. Please try again.';
+                        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
                       }
                     },
               child: const Text('SEND NOW'),
