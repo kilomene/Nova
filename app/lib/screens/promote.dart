@@ -50,12 +50,12 @@ class _PromoteScreenState extends State<PromoteScreen> {
           children: [
             const Text('Boost this video in the For You feed.',
                 style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            const Text('Estimated reach — not guaranteed. Promoted videos are labeled "Promoted".',
+            SizedBox(height: 4),
+            Text('Estimated reach — not guaranteed. Promoted videos are labeled "Promoted".',
                 style: TextStyle(color: Colors.white54, fontSize: 12)),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             if (pkgs == null && _error == null)
-              const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107))),
+              Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary)),
             if (_error != null) Text(_error!, style: const TextStyle(color: Colors.redAccent)),
             if (pkgs != null)
               for (final id in pkgs.keys)
@@ -65,9 +65,9 @@ class _PromoteScreenState extends State<PromoteScreen> {
                   selected: _selected == id,
                   onTap: () => setState(() => _selected = id),
                 ),
-            const Spacer(),
+            Spacer(),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
               onPressed: (_busy || pkgs == null)
                   ? null
                   : () async {
@@ -113,12 +113,12 @@ class _PackageCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
+        margin: EdgeInsets.only(bottom: 12),
+        padding: EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF161616),
+          color: Color(0xFF161616),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: selected ? const Color(0xFFFFC107) : Colors.white12, width: 2),
+          border: Border.all(color: selected ? Theme.of(context).colorScheme.primary : Colors.white12, width: 2),
         ),
         child: Row(
           children: [
@@ -130,11 +130,11 @@ class _PackageCard extends StatelessWidget {
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                   const SizedBox(height: 4),
                   Text('${spec['days']} day(s) · ~${spec['estReach']} engagements',
-                      style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                      style: TextStyle(color: Colors.white70, fontSize: 13)),
                 ],
               ),
             ),
-            Text('\$${spec['amount']}', style: const TextStyle(color: Color(0xFFFFC107), fontSize: 20, fontWeight: FontWeight.bold)),
+            Text('\$${spec['amount']}', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 20, fontWeight: FontWeight.bold)),
           ],
         ),
       ),
@@ -172,11 +172,11 @@ class _PromotionMetricsScreenState extends State<PromotionMetricsScreen> {
     final totals = (_data?['totals'] as Map?)?.cast<String, dynamic>();
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black, title: const Text('Promotion metrics')),
+      appBar: AppBar(backgroundColor: Colors.black, title: Text('Promotion metrics')),
       body: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(16),
         child: _data == null
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
+            ? Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary))
             : Column(
                 children: [
                   Row(
@@ -206,7 +206,7 @@ class _Stat extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(value, style: const TextStyle(color: Color(0xFFFFC107), fontSize: 28, fontWeight: FontWeight.bold)),
+        Text(value, style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 28, fontWeight: FontWeight.bold)),
         Text(label, style: const TextStyle(color: Colors.white54)),
       ],
     );
