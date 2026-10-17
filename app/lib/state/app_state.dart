@@ -102,10 +102,17 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> init() async {
+  /// Phase 1 boot: Firebase + device id + client VPN check. Makes NO
+  /// authenticated API calls, so it is safe to run with no signed-in user
+  /// (the auth gate runs right after this).
+  Future<void> boot() async {
     await auth.init();
     await _ensureDeviceId();
     await checkVpnInterface();
+  }
+
+  Future<void> init() async {
+    await boot();
     if (isDemo) {
       me = NovaUser(uid: auth.uid, handle: 'you', displayName: 'You');
       _seedDemo();
