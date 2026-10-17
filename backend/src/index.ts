@@ -104,6 +104,27 @@ async function ensureAiColumn(db: D1Database): Promise<void> {
   aiColEnsured = true;
 }
 
+// Post-editor options: allow_comments, audience_control, tag_products, cover_key.
+// Same deploy-safety pattern as ensureAiColumn.
+let videoOptsEnsured = false;
+async function ensureVideoOptionsColumns(db: D1Database): Promise<void> {
+  if (videoOptsEnsured) return;
+  const cols = [
+    'ALTER TABLE videos ADD COLUMN allow_comments INTEGER NOT NULL DEFAULT 1',
+    "ALTER TABLE videos ADD COLUMN audience_control TEXT NOT NULL DEFAULT 'everyone'",
+    'ALTER TABLE videos ADD COLUMN tag_products INTEGER NOT NULL DEFAULT 0',
+    "ALTER TABLE videos ADD COLUMN cover_key TEXT NOT NULL DEFAULT ''",
+  ];
+  for (const sql of cols) {
+    try {
+      await db.prepare(sql).run();
+    } catch {
+      // Column already exists.
+    }
+  }
+  videoOptsEnsured = true;
+}
+
 // coin_purchases maps each Flutterwave tx_ref to its buyer + package so the
 // webhook/callback settler never has to parse underscores out of tx_refs
 // (package ids like "coins_500" contain them). Same deploy-safety pattern.
@@ -914,20 +935,30 @@ export default {
         // AI-generated declaration: optional for now (defaults to false).
         // The mandatory uploader toggle ships with the premium upload redesign.
         const isAiGenerated = b.isAiGenerated === true || b.isAiGenerated === 1 ? 1 : 0;
+        // Uploader privacy choice: public | friends (mutual) | private.
+        const reqVisibility = vOptStr(b.visibility, 'visibility', 20);
+        const allowedVis = ['public', 'friends', 'private'];
+        const wantVisibility = allowedVis.includes(reqVisibility) ? reqVisibility : 'public';
+        // More options from the post editor.
+        const allowComments = b.allowComments === false || b.allowComments === 0 ? 0 : 1;
+        const audienceControl = vOptStr(b.audienceControl, 'audienceControl', 20) || 'everyone';
+        const tagProducts = b.tagProducts === true || b.tagProducts === 1 ? 1 : 0;
+        const coverKey = vOptStr(b.coverKey, 'coverKey', 300);
         const id = newId();
         await ensureAiColumn(env.DB);
+        await ensureVideoOptionsColumns(env.DB);
         // High-risk devices: uploads are held for review (quarantined from feeds).
         // Borderline on-device nudity scans also quarantine (review decides; strike only if confirmed).
         const scanVerdict = vOptStr(b.scanVerdict, 'scanVerdict', 20);
-        let visibility = (await deviceRestricted(env.DB, uid)) ? 'quarantine' : 'public';
+        let visibility = (await deviceRestricted(env.DB, uid)) ? 'quarantine' : wantVisibility;
         if (scanVerdict === 'borderline') visibility = 'quarantine';
         if (scanVerdict === 'block') throw httpError(400, 'content_blocked_by_safety_scan');
         const t = now();
         await env.DB.prepare(
-          `INSERT INTO videos (id, uid, caption, hashtags, media_key, media_url, duration_sec, sound_label, audio_key, visibility, is_ai_generated, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO videos (id, uid, caption, hashtags, media_key, media_url, duration_sec, sound_label, audio_key, visibility, is_ai_generated, allow_comments, audience_control, tag_products, cover_key, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-          .bind(id, uid, caption, JSON.stringify(hashtags), mediaKey, `/media/${mediaKey}`, durationSec, soundLabel, audioKey, visibility, isAiGenerated, t)
+          .bind(id, uid, caption, JSON.stringify(hashtags), mediaKey, `/media/${mediaKey}`, durationSec, soundLabel, audioKey, visibility, isAiGenerated, allowComments, audienceControl, tagProducts, coverKey, t)
           .run();
         if (scanVerdict === 'borderline') {
           // Every borderline scan lands in the review queue — no auto-dismissal.
@@ -960,7 +991,14 @@ export default {
           .filter((t) => t.length > 0)
           .slice(0, 10);
         let scoreExpr = `(v.like_count*2 + v.comment_count*3 + v.share_count*4 - ((? - v.created_at)/3600000.0)*0.8)`;
-        const binds: unknown[] = [cursor, cursor, uid, uid];
+        // Privacy: public → everyone; friends → mutual followers only; private → owner only.
+        // The three uid binds below map to the two EXISTS subqueries + the owner check, in order.
+        const privacyExpr = `(v.visibility = 'public'
+           OR (v.visibility = 'friends'
+               AND EXISTS (SELECT 1 FROM follows f1 WHERE f1.follower_uid = ? AND f1.followee_uid = v.uid)
+               AND EXISTS (SELECT 1 FROM follows f2 WHERE f2.follower_uid = v.uid AND f2.followee_uid = ?))
+           OR (v.visibility = 'private' AND v.uid = ?))`;
+        const binds: unknown[] = [cursor, uid, uid, uid, cursor, uid, uid];
         if (boostTags.length > 0) {
           const ph = boostTags.map(() => '?').join(',');
           scoreExpr += ` + (SELECT COUNT(*) FROM json_each(v.hashtags) j WHERE j.value IN (${ph})) * 5`;
@@ -975,7 +1013,7 @@ export default {
         const rows = await env.DB.prepare(
           `SELECT v.*, u.handle, u.display_name, u.avatar_url, ${scoreExpr} AS score
            FROM videos v JOIN users u ON u.uid = v.uid
-           WHERE v.visibility = 'public' AND v.created_at < ?
+           WHERE ${privacyExpr} AND v.created_at < ?
              AND ${BLOCK_FILTER}
            ORDER BY score DESC, v.created_at DESC LIMIT ?`,
         )
@@ -1044,6 +1082,10 @@ export default {
           const vid = vStr(m[1], 'videoId', 1, 64);
           const b = await readJson(request) as Record<string, unknown>;
           const text = vStr(b.text, 'text', 1, 500);
+          // Respect the uploader's "allow comments" setting.
+          await ensureVideoOptionsColumns(env.DB);
+          const vc = await env.DB.prepare('SELECT allow_comments FROM videos WHERE id = ?').bind(vid).first<{ allow_comments: number }>();
+          if (vc && vc.allow_comments === 0) throw httpError(403, 'comments_disabled');
           const id = newId();
           const t = now();
           // Pattern detection: same text 3+ times in 5 minutes = spam flag.
