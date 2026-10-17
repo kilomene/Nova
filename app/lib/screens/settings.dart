@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
 import '../services/api_client.dart';
@@ -36,10 +37,10 @@ class SettingsScreen extends StatelessWidget {
             Container(
               margin: const EdgeInsets.all(12),
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
               child: const Text(
                 'DEMO MODE — no cloud backend configured. Everything runs locally. See docs/SETUP.md to wire Firebase + Cloudflare + Flutterwave.',
-                style: TextStyle(color: Colors.amber, fontSize: 12),
+                style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12),
               ),
             ),
           if (!state.isDemo && state.accountStatus != 'active')
@@ -216,7 +217,7 @@ class SettingsScreen extends StatelessWidget {
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
             onPressed: () async {
               final u = c.text.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9_]'), '');
               if (u.isEmpty) return;
@@ -240,17 +241,25 @@ class SettingsScreen extends StatelessWidget {
 
   void _biometricPrompt(BuildContext context) async {
     final bio = BiometricService();
-    if (!await bio.isAvailable) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Biometrics not available on this device.')));
-      }
-      return;
+    // The service now reports granular failures (not enrolled, locked out,
+    // user canceled, …) so the user gets an actionable message instead of a
+    // generic "failed".
+    final result = await bio.authenticate(
+        reason: 'Verify it\'s you to manage biometric unlock');
+    if (!context.mounted) return;
+    if (result.ok) {
+      // Persist the preference so "enabled" is real, not just a snackbar.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('nova_biometric_unlock', true);
+      } catch (_) {}
     }
-    final ok = await bio.authenticate(reason: 'Verify it\'s you to manage biometric unlock');
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(ok ? 'Biometric verified — wallet unlock enabled.' : 'Biometric failed.')));
+    final msg =
+        result.ok ? 'Biometric verified — wallet unlock enabled.' : result.message;
+    // userCanceled yields a null message: stay silent when dismissed.
+    if (msg != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(msg)));
     }
   }
 
@@ -295,7 +304,7 @@ class SettingsScreen extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       title: Text(title, style: TextStyle(color: fg)),
       subtitle: subtitle != null ? Text(subtitle, style: TextStyle(color: sub, fontSize: 12)) : null,
-      trailing: selected ? const Icon(Icons.check, color: Color(0xFFFFC107)) : null,
+      trailing: selected ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary) : null,
       onTap: () {
         state.setThemePreference(value);
         Navigator.of(context).pop();
@@ -372,7 +381,7 @@ class _Row extends StatelessWidget {
     final sub = isDark ? Colors.white54 : Colors.black54;
     final chev = isDark ? Colors.white38 : Colors.black38;
     return ListTile(
-      leading: Icon(icon, color: const Color(0xFFFFC107)),
+      leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
       title: Text(title, style: TextStyle(color: fg)),
       subtitle: subtitle == null ? null : Text(subtitle!, style: TextStyle(color: sub, fontSize: 12)),
       trailing: onTap == null ? null : Icon(Icons.chevron_right, color: chev),
