@@ -164,8 +164,13 @@ class SettingsScreen extends StatelessWidget {
             title: 'Sign out',
             onTap: () async {
               await state.auth.signOut();
-              await state.init();
-              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signed out (fresh anonymous session).')));
+              if (context.mounted) {
+                // v1.1: sign-in is mandatory — return to the login gate.
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const AuthScreen(gate: true)),
+                  (_) => false,
+                );
+              }
             },
           ),
           Padding(
