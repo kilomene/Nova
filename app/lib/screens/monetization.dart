@@ -71,7 +71,7 @@ class _CoinsScreenState extends State<CoinsScreen> {
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Continue'),
           ),
@@ -146,7 +146,7 @@ class _CoinsScreenState extends State<CoinsScreen> {
                   title: Text('${p.coins} coins', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   subtitle: Text('Spend on LIVE gifts & tips', style: TextStyle(color: Colors.white54, fontSize: 12)),
                   trailing: ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
+                    style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
                     onPressed: () => _buy(p),
                     child: Text('\$${p.usd}'),
                   ),
@@ -213,7 +213,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
             SizedBox(height: 20),
             if (!state.verificationActive)
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
+                style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
                 onPressed: () async {
                   final email = TextEditingController(text: state.auth.email ?? '');
                   final ok = await showDialog<bool>(
@@ -231,7 +231,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                       ),
                       actions: [
                         TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text('Cancel')),
-                        ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black), onPressed: () => Navigator.of(context).pop(true), child: Text('Continue')),
+                        ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary), onPressed: () => Navigator.of(context).pop(true), child: Text('Continue')),
                       ],
                     ),
                   );
