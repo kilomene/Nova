@@ -20,9 +20,16 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Colors.black : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white54 : Colors.black54;
+    final faint2 = isDark ? Colors.white24 : Colors.black26;
+    final faint12 = isDark ? Colors.white12 : Colors.black12;
+    final dialogBg = isDark ? const Color(0xFF1a1a1a) : Colors.white;
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black, title: const Text('Settings')),
+      backgroundColor: bg,
+      appBar: AppBar(backgroundColor: bg, title: Text('Settings', style: TextStyle(color: fg))),
       body: ListView(
         children: [
           if (state.isDemo)
@@ -88,7 +95,13 @@ class SettingsScreen extends StatelessWidget {
             subtitle: state.verificationActive ? 'You\'re verified' : '\$25/month — get the blue tick',
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const VerificationScreen())),
           ),
-          const Divider(color: Colors.white12),
+          _Row(
+            icon: Icons.palette_outlined,
+            title: 'Theme',
+            subtitle: _themeLabel(state.themePreference),
+            onTap: () => _pickTheme(context, state),
+          ),
+          Divider(color: faint12),
           const _Header('Money'),
           _Row(
             icon: Icons.monetization_on_outlined,
@@ -108,7 +121,7 @@ class SettingsScreen extends StatelessWidget {
             subtitle: 'Seller status: ${state.sellerProfile.status}',
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SellerOnboardingScreen())),
           ),
-          const Divider(color: Colors.white12),
+          Divider(color: faint12),
           const _Header('Trust & safety'),
           _Row(
             icon: Icons.gavel_outlined,
@@ -122,7 +135,7 @@ class SettingsScreen extends StatelessWidget {
             subtitle: 'Help center & tickets',
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SupportScreen())),
           ),
-          const Divider(color: Colors.white12),
+          Divider(color: faint12),
           const _Header('Network & security'),
           _Row(
             icon: Icons.cloud_outlined,
@@ -137,9 +150,9 @@ class SettingsScreen extends StatelessWidget {
             subtitle: 'How your keys and money are protected',
             onTap: () => showDialog(
               context: context,
-              builder: (context) => const AlertDialog(
-                backgroundColor: Color(0xFF1a1a1a),
-                title: Text('Security', style: TextStyle(color: Colors.white)),
+              builder: (context) => AlertDialog(
+                backgroundColor: dialogBg,
+                title: Text('Security', style: TextStyle(color: fg)),
                 content: SingleChildScrollView(
                   child: Text(
                     '• Your wallet keys are encrypted on this device with your PIN (AES-256-GCM, PBKDF2 210k).\n'
@@ -150,13 +163,13 @@ class SettingsScreen extends StatelessWidget {
                     '  3. Crypto wallet — on-chain BTC/ETH/USDT/USDC send/receive only. No fiat.\n'
                     '• VPN/proxy/Tor are blocked (client interface check + server egress blacklist).\n'
                     '• Full threat model: SECURITY.md in the repo.',
-                    style: TextStyle(color: Colors.white70),
+                    style: TextStyle(color: sub),
                   ),
                 ),
               ),
             ),
           ),
-          const Divider(color: Colors.white12),
+          Divider(color: faint12),
           const _Header('About'),
           _Row(icon: Icons.info_outline, title: 'Nova', subtitle: 'v0.1.0 · clean-room TikTok-style build'),
           _Row(
@@ -176,7 +189,7 @@ class SettingsScreen extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text('Backend: ${AppConfig.demoMode ? 'demo (local)' : AppConfig.apiBaseUrl}',
-                style: const TextStyle(color: Colors.white24, fontSize: 11), textAlign: TextAlign.center),
+                style: TextStyle(color: faint2, fontSize: 11), textAlign: TextAlign.center),
           ),
         ],
       ),
@@ -184,17 +197,21 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _setUsername(BuildContext context, AppState state) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dialogBg = isDark ? const Color(0xFF1a1a1a) : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white54 : Colors.black54;
     final c = TextEditingController(text: state.me?.username ?? '');
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a1a),
-        title: const Text('Set username', style: TextStyle(color: Colors.white)),
+        backgroundColor: dialogBg,
+        title: Text('Set username', style: TextStyle(color: fg)),
         content: TextField(
           controller: c,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-              labelText: 'Username (for login)', labelStyle: TextStyle(color: Colors.white54)),
+          style: TextStyle(color: fg),
+          decoration: InputDecoration(
+              labelText: 'Username (for login)', labelStyle: TextStyle(color: sub)),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
@@ -237,23 +254,75 @@ class SettingsScreen extends StatelessWidget {
     }
   }
 
-  void _showStrikes(BuildContext context, AppState state) {
-    if (state.isDemo) {
+  String _themeLabel(String pref) {
+    switch (pref) {
+      case 'light':
+        return 'Light theme';
+      case 'dark':
+        return 'Dark theme';
+      default:
+        return 'System theme';
+    }
+  }
+
+  void _pickTheme(BuildContext context, AppState state) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dialogBg = isDark ? const Color(0xFF1a1a1a) : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: dialogBg,
+        title: Text('Theme', style: TextStyle(color: fg)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _themeOption(context, state, 'system', 'System theme', 'Follow device setting'),
+            _themeOption(context, state, 'light', 'Light theme', null),
+            _themeOption(context, state, 'dark', 'Dark theme', null),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _themeOption(BuildContext context, AppState state, String value, String title, String? subtitle) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white54 : Colors.black54;
+    final selected = state.themePreference == value;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(title, style: TextStyle(color: fg)),
+      subtitle: subtitle != null ? Text(subtitle, style: TextStyle(color: sub, fontSize: 12)) : null,
+      trailing: selected ? const Icon(Icons.check, color: Color(0xFFFFC107)) : null,
+      onTap: () {
+        state.setThemePreference(value);
+        Navigator.of(context).pop();
+      },
+    );
+  }
+
+  void _showStrikes(BuildContext context, AppState state) {    if (state.isDemo) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No strikes in demo mode.')));
       return;
     }
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dialogBg = isDark ? const Color(0xFF1a1a1a) : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white54 : Colors.black54;
     state.loadStrikes().then((_) {
       if (!context.mounted) return;
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
-          backgroundColor: const Color(0xFF1a1a1a),
-          title: const Text('Strikes', style: TextStyle(color: Colors.white)),
+          backgroundColor: dialogBg,
+          title: Text('Strikes', style: TextStyle(color: fg)),
           content: SizedBox(
             width: double.maxFinite,
             child: state.strikes.isEmpty
-                ? const Text('Clean record. Zero-tolerance: nudity = instant strike; 3 strikes = suspension; nudity on LIVE = instant ban.',
-                    style: TextStyle(color: Colors.white70, fontSize: 13))
+                ? Text('Clean record. Zero-tolerance: nudity = instant strike; 3 strikes = suspension; nudity on LIVE = instant ban.',
+                    style: TextStyle(color: sub, fontSize: 13))
                 : Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -262,8 +331,8 @@ class SettingsScreen extends StatelessWidget {
                       for (final s in state.strikes)
                         ListTile(
                           contentPadding: EdgeInsets.zero,
-                          title: Text(s.reason, style: const TextStyle(color: Colors.white, fontSize: 14)),
-                          subtitle: Text(s.details, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                          title: Text(s.reason, style: TextStyle(color: fg, fontSize: 14)),
+                          subtitle: Text(s.details, style: TextStyle(color: sub, fontSize: 12)),
                         ),
                     ],
                   ),
@@ -281,9 +350,10 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Text(text, style: const TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.bold)),
+      child: Text(text, style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 12, fontWeight: FontWeight.bold)),
     );
   }
 }
@@ -297,11 +367,15 @@ class _Row extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white54 : Colors.black54;
+    final chev = isDark ? Colors.white38 : Colors.black38;
     return ListTile(
       leading: Icon(icon, color: const Color(0xFFFFC107)),
-      title: Text(title, style: const TextStyle(color: Colors.white)),
-      subtitle: subtitle == null ? null : Text(subtitle!, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-      trailing: onTap == null ? null : const Icon(Icons.chevron_right, color: Colors.white38),
+      title: Text(title, style: TextStyle(color: fg)),
+      subtitle: subtitle == null ? null : Text(subtitle!, style: TextStyle(color: sub, fontSize: 12)),
+      trailing: onTap == null ? null : Icon(Icons.chevron_right, color: chev),
       onTap: onTap,
     );
   }
