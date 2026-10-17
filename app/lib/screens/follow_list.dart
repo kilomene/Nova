@@ -57,7 +57,7 @@ class _FollowListScreenState extends State<FollowListScreen> {
     final bg = isDark ? Colors.black : Colors.white;
     final fg = isDark ? Colors.white : Colors.black87;
     final sub = isDark ? Colors.white60 : Colors.black54;
-    const gold = Color(0xFFFFC107);
+    final gold = Theme.of(context).colorScheme.primary;
     final state = context.watch<AppState>();
 
     return Scaffold(
@@ -70,7 +70,7 @@ class _FollowListScreenState extends State<FollowListScreen> {
             style: TextStyle(color: fg, fontWeight: FontWeight.w700)),
       ),
       body: _users == null
-          ? const Center(child: CircularProgressIndicator(color: gold))
+          ? Center(child: CircularProgressIndicator(color: gold))
           : RefreshIndicator(
               color: gold,
               onRefresh: _load,
@@ -179,7 +179,7 @@ class _FollowListScreenState extends State<FollowListScreen> {
                                           style:
                                               ElevatedButton.styleFrom(
                                             backgroundColor: gold,
-                                            foregroundColor: Colors.black,
+                                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
                                             shape: RoundedRectangleBorder(
                                                 borderRadius:
                                                     BorderRadius.circular(6)),
