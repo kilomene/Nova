@@ -17,17 +17,17 @@ class AiBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: (isDark ? Colors.black : Colors.white).withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFFFC107).withValues(alpha: 0.7), width: 1),
+        border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.auto_awesome, size: compact ? 10 : 12, color: const Color(0xFFFFC107)),
+          Icon(Icons.auto_awesome, size: compact ? 10 : 12, color: Theme.of(context).colorScheme.primary),
           SizedBox(width: compact ? 3 : 4),
           Text(
             'AI-generated',
             style: TextStyle(
-              color: const Color(0xFFFFC107),
+              color: Theme.of(context).colorScheme.primary,
               fontSize: compact ? 9 : 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.3,
@@ -66,7 +66,7 @@ class AiDeclarationToggle extends StatelessWidget {
         border: Border.all(
           color: isAiGenerated == null
               ? (isDark ? Colors.white24 : Colors.black12)
-              : const Color(0xFFFFC107).withValues(alpha: 0.6),
+              : Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
         ),
       ),
       child: Column(
@@ -74,7 +74,7 @@ class AiDeclarationToggle extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.auto_awesome, color: Color(0xFFFFC107), size: 18),
+              Icon(Icons.auto_awesome, color: Theme.of(context).colorScheme.primary, size: 18),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -120,11 +120,11 @@ class AiDeclarationToggle extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),
             gradient: selected
-                ? const LinearGradient(colors: [Color(0xFFFFD54F), Color(0xFFFF8F00)])
+                ? LinearGradient(colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.primary])
                 : null,
             color: selected ? null : (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05)),
             border: Border.all(
