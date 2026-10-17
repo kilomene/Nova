@@ -300,7 +300,7 @@ class _VideoCardState extends State<VideoCard> {
                   label: 'More',
                   onTap: () => showModalBottomSheet(
                     context: context,
-                    backgroundColor: (Theme.of(context).brightness == Brightness.dark) ? const Color(0xFF1a1a1a) : Colors.white,
+                    backgroundColor: (Theme.of(context).brightness == Brightness.dark) ? Color(0xFF1a1a1a) : Colors.white,
                     builder: (_) => Builder(builder: (sheetCtx) {
                       final sheetDark = Theme.of(sheetCtx).brightness == Brightness.dark;
                       final sheetFg = sheetDark ? Colors.white : Colors.black87;
@@ -355,16 +355,20 @@ class _VideoCardState extends State<VideoCard> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(v.displayName.isNotEmpty ? v.displayName : '@${v.handle}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                      if (v.affiliatedWith != null) ...[
+                        const SizedBox(width: 4),
+                        AffiliateBadge(avatarUrl: v.affiliatedWith!.avatarUrl, size: 16),
+                      ],
                       if (v.promoted) ...[
-                        const SizedBox(width: 8),
+                        SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
                             color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(4),
                             border: Border.all(color: Theme.of(context).colorScheme.primary, width: 1),
                           ),
-                          child: const Text('Promoted',
+                          child: Text('Promoted',
                               style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 11, fontWeight: FontWeight.bold)),
                         ),
                       ],
@@ -490,7 +494,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
             const SizedBox(height: 8),
             Container(width: 40, height: 4, decoration: BoxDecoration(color: avatarBg, borderRadius: BorderRadius.circular(2))),
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: EdgeInsets.all(12),
               child: Text('${widget.video.commentCount} comments', style: TextStyle(color: fg, fontWeight: FontWeight.bold)),
             ),
             Expanded(
@@ -511,6 +515,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                             children: [
                               Text(c.handle, style: TextStyle(color: fg, fontWeight: FontWeight.bold, fontSize: 13)),
                               if (c.isVerified) ...[const SizedBox(width: 4), VerifiedBadge(size: 13, type: c.verificationType)],
+                              if (c.affiliatedWith != null) ...[const SizedBox(width: 4), AffiliateBadge(avatarUrl: c.affiliatedWith!.avatarUrl, size: 13)],
                             ],
                           ),
                           subtitle: Text(c.text, style: TextStyle(color: sub)),
@@ -535,7 +540,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                         hintStyle: TextStyle(color: faint),
                         filled: true,
                         fillColor: fieldFill,
-                        border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20)), borderSide: BorderSide.none),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20)), borderSide: BorderSide.none),
                       ),
                     ),
                   ),
