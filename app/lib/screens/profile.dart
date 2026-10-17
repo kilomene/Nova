@@ -649,7 +649,7 @@ class _GoldButton extends StatelessWidget {
         child: Text(label,
             textAlign: TextAlign.center,
             style: TextStyle(
-                color: Colors.black,
+                color: Theme.of(context).colorScheme.onPrimary,
                 fontWeight: FontWeight.w800,
                 fontSize: 14)),
       ),
