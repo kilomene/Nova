@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -91,7 +93,7 @@ class _SplashScreenState extends State<SplashScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _NovaMark(size: 84),
+              NovaLogo(size: 120),
               SizedBox(height: 16),
               Text('Nova', style: TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: Colors.white)),
             ],
@@ -171,23 +173,118 @@ class _NetworkBlockedScreenState extends State<NetworkBlockedScreen> {
   }
 }
 
-/// Original Nova mark: a gold "N" burst. Not affiliated with any other brand.
-class _NovaMark extends StatelessWidget {
+/// Animated Nova logo: the white glitch-ℕ on black (assets/nova-logo.png).
+///
+/// A 5-second real-time loop (AnimationController.repeat — not one-shot):
+/// scale breathes 1.00 → 1.05 → 1.00, the mark wobbles ±0.04 rad, glitch
+/// bursts fire twice per loop (fast horizontal jitter + a displaced
+/// horizontal slice), and a lemon-green/pink glow pulses behind it.
+/// It feels alive like a video loop rather than a static splash image.
+class NovaLogo extends StatefulWidget {
   final double size;
-  const _NovaMark({required this.size});
+  const NovaLogo({super.key, required this.size});
+
+  @override
+  State<NovaLogo> createState() => _NovaLogoState();
+}
+
+class _NovaLogoState extends State<NovaLogo> with SingleTickerProviderStateMixin {
+  late final AnimationController _loop;
+
+  // The logo's own glitch-shadow colors: lemon-green + pink.
+  static const _lemon = Color(0xFFBFFF3C);
+  static const _pink = Color(0xFFFF5C8A);
+
+  @override
+  void initState() {
+    super.initState();
+    _loop = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 5),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _loop.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFFFFD54F), Color(0xFFFF8F00)]),
-        borderRadius: BorderRadius.circular(size * 0.28),
-      ),
-      child: Center(
-        child: Text('N', style: TextStyle(fontSize: size * 0.55, fontWeight: FontWeight.w900, color: Colors.black87)),
-      ),
+    final logo = Image.asset(
+      'assets/nova-logo.png',
+      width: widget.size,
+      height: widget.size,
+      fit: BoxFit.contain,
+    );
+    return AnimatedBuilder(
+      animation: _loop,
+      builder: (context, _) {
+        final t = _loop.value; // 0..1 across the 5s loop
+        final a = t * 2 * pi;
+        // 1) breathing scale: 1.00 → 1.05 → 1.00 (smooth cosine).
+        final scale = 1.0 + 0.025 * (1 - cos(a));
+        // 2) gentle rotation wobble, two full cycles per loop.
+        final wobble = 0.04 * sin(2 * a + 0.6);
+        // 3) glitch bursts: envelope peaks twice per loop; fast jitter inside.
+        final env = pow(max(0.0, sin(2 * a)), 6).toDouble();
+        final jitter = 7.0 * env * sin(t * 120 * pi);
+        // 4) glow pulses lemon-green → pink across the loop.
+        final glowColor = Color.lerp(_lemon, _pink, 0.5 + 0.5 * sin(a))!;
+        final glowBlur = 26 + 18 * env + 8 * sin(a);
+        // 5) displaced horizontal slice during strong bursts.
+        final slice = env > 0.5;
+        final sliceY = (((t * 7.3) % 0.7) * 2 - 1).clamp(-0.82, 0.82);
+        return Transform.scale(
+          scale: scale,
+          child: Transform.rotate(
+            angle: wobble,
+            child: Container(
+              width: widget.size,
+              height: widget.size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: glowColor.withValues(alpha: 0.35),
+                    blurRadius: glowBlur,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  logo,
+                  // Jittered ghost copy during bursts (double-image glitch).
+                  if (env > 0.02)
+                    Transform.translate(
+                      offset: Offset(jitter * 0.6, 0),
+                      child: logo,
+                    ),
+                  // Displaced horizontal slice during strong bursts.
+                  if (slice)
+                    ClipRect(
+                      child: Align(
+                        alignment: Alignment(0, sliceY),
+                        heightFactor: 0.16,
+                        child: Transform.translate(
+                          offset: Offset(jitter, 0),
+                          child: SizedBox(
+                            width: widget.size,
+                            height: widget.size,
+                            child: logo,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -425,7 +522,7 @@ class _AuthScreenState extends State<AuthScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 36),
-        const _NovaMark(size: 72),
+        const NovaLogo(size: 72),
         const SizedBox(height: 28),
         Text(
           _signup ? 'Sign up for Nova' : 'Log in to Nova',
@@ -565,7 +662,7 @@ class _AuthScreenState extends State<AuthScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 36),
-        const _NovaMark(size: 64),
+        const NovaLogo(size: 64),
         const SizedBox(height: 24),
         const Text('Two-factor authentication',
             textAlign: TextAlign.center,
@@ -627,10 +724,15 @@ class _AuthScreenState extends State<AuthScreen> {
           children: [
             SizedBox(width: 24, height: 24, child: Center(child: icon)),
             const SizedBox(width: 14),
-            Expanded(
+            // Flexible (not Expanded) + ellipsis: the label can never push
+            // the chevron out or overlap it on narrow screens.
+            Flexible(
               child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
             ),
+            const SizedBox(width: 8),
             const Icon(Icons.chevron_right, color: Colors.white38),
           ],
         ),
