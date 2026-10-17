@@ -1073,9 +1073,16 @@ export default {
       {
         const m = path.match(/^\/api\/videos\/([^/]+)\/view$/);
         if (m && method === 'POST') {
-          await guard(request, env, 300);
+          const uid = await guard(request, env, 300);
           const vid = vStr(m[1], 'videoId', 1, 64);
-          await env.DB.prepare('UPDATE videos SET view_count = view_count + 1 WHERE id = ?').bind(vid).run();
+          // One view per account — INSERT OR IGNORE deduplicates by (uid, video_id)
+          await env.DB.prepare(
+            'CREATE TABLE IF NOT EXISTS video_views (uid TEXT NOT NULL, video_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (uid, video_id))'
+          ).run();
+          await env.DB.prepare('INSERT OR IGNORE INTO video_views (uid, video_id, created_at) VALUES (?, ?, ?)')
+            .bind(uid, vid, now()).run();
+          await env.DB.prepare('UPDATE videos SET view_count = (SELECT COUNT(*) FROM video_views WHERE video_id = ?) WHERE id = ?')
+            .bind(vid, vid).run();
           return json({ ok: true });
         }
       }
@@ -1630,10 +1637,10 @@ export default {
           await guard(request, env);
           const targetUid = m[1];
           const row = await env.DB.prepare(
-            'SELECT uid, handle, display_name, avatar_url, evm_address, btc_address FROM users WHERE uid = ? OR handle = ?'
+            'SELECT uid, handle, display_name, avatar_url, evm_address, btc_address, is_verified, kyc_status FROM users WHERE uid = ? OR handle = ?'
           ).bind(targetUid, targetUid).first<{
             uid: string; handle: string; display_name: string; avatar_url: string;
-            evm_address: string; btc_address: string;
+            evm_address: string; btc_address: string; is_verified: number; kyc_status: string;
           }>();
           if (!row) throw httpError(404, 'user_not_found');
           return json({
@@ -1643,6 +1650,8 @@ export default {
             avatarUrl: row.avatar_url,
             evm_address: row.evm_address,
             btc_address: row.btc_address,
+            is_verified: !!row.is_verified,
+            kyc_status: row.kyc_status,
           });
         }
       }
