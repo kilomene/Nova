@@ -197,6 +197,15 @@ CREATE TABLE IF NOT EXISTS nova_coin_ledger (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_ledger_uid ON nova_coin_ledger(uid, created_at DESC);
+-- Maps each Flutterwave tx_ref to its buyer + package at charge time, so the
+-- webhook/callback settler never parses tx_refs (package ids contain '_').
+CREATE TABLE IF NOT EXISTS coin_purchases (
+  tx_ref TEXT PRIMARY KEY,
+  uid TEXT NOT NULL,
+  package_id TEXT NOT NULL,
+  amount_usd REAL NOT NULL,
+  created_at INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS gift_catalog (
   id TEXT PRIMARY KEY,
