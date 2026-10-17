@@ -121,7 +121,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final bg = isDark ? Colors.black : Colors.white;
     final fg = isDark ? Colors.white : Colors.black87;
     final sub = isDark ? Colors.white60 : Colors.black54;
-    const gold = Color(0xFFFFC107);
+    final gold = Theme.of(context).colorScheme.primary;
     final state = context.watch<AppState>();
     final u = state.me;
 
@@ -137,12 +137,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           TextButton(
             onPressed: _saving ? null : _save,
             child: _saving
-                ? const SizedBox(
+                ? SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: gold))
-                : const Text('Save',
+                : Text('Save',
                     style: TextStyle(
                         color: gold,
                         fontWeight: FontWeight.w700,
@@ -169,12 +169,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             ? NetworkImage(u!.avatarUrl)
                             : null,
                         child: _uploadingPhoto
-                            ? const SizedBox(
+                            ? SizedBox(
                                 width: 28,
                                 height: 28,
                                 child: CircularProgressIndicator(
                                     strokeWidth: 3,
-                                    color: Color(0xFFFFC107)))
+                                    color: Theme.of(context).colorScheme.primary))
                             : (u?.avatarUrl.isEmpty ?? true)
                                 ? Text(
                                     (u?.handle.isNotEmpty ?? false)
@@ -190,7 +190,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         child: Container(
                           width: 28,
                           height: 28,
-                          decoration: const BoxDecoration(
+                          decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: gold,
                           ),
@@ -240,8 +240,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               content: Text('Profile link copied')));
                     }
                   },
-                  icon: const Icon(Icons.copy, size: 14, color: gold),
-                  label: const Text('Copy',
+                  icon: Icon(Icons.copy, size: 14, color: gold),
+                  label: Text('Copy',
                       style: TextStyle(color: gold, fontSize: 13)),
                 ),
               ],
