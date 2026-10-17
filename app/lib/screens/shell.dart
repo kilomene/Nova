@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../widgets/nova_icons.dart';
 import 'feed.dart';
 import 'inbox.dart';
 import 'live.dart';
@@ -51,23 +52,30 @@ class _MainShellState extends State<MainShell> {
         currentIndex: _index,
         onTap: _onTap,
         items: [
-          const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          const BottomNavigationBarItem(icon: Icon(Icons.storefront), label: 'Shop'),
           BottomNavigationBarItem(
-            icon: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFFD54F), Color(0xFFFF8F00)],
-                ),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.add, color: Colors.black, size: 26),
-            ),
+            icon: NovaIcon.home(active: false, size: 26),
+            activeIcon: const NovaIcon.home(active: true, size: 26),
+            label: 'Home',
+          ),
+          BottomNavigationBarItem(
+            icon: NovaIcon.shop(active: false, size: 26),
+            activeIcon: const NovaIcon.shop(active: true, size: 26),
+            label: 'Shop',
+          ),
+          const BottomNavigationBarItem(
+            icon: NovaCreateButton(size: 44),
             label: '',
           ),
-          const BottomNavigationBarItem(icon: Icon(Icons.inbox_outlined), label: 'Inbox'),
-          const BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
+          BottomNavigationBarItem(
+            icon: NovaIcon.inbox(active: false, size: 26),
+            activeIcon: const NovaIcon.inbox(active: true, size: 26),
+            label: 'Inbox',
+          ),
+          BottomNavigationBarItem(
+            icon: NovaIcon.profile(active: false, size: 26),
+            activeIcon: const NovaIcon.profile(active: true, size: 26),
+            label: 'Profile',
+          ),
         ],
       ),
     );
