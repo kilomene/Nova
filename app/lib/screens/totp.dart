@@ -31,12 +31,16 @@ class _TotpSetupScreenState extends State<TotpSetupScreen> {
     setState(() => _busy = true);
     try {
       final r = await context.read<AppState>().api.post('/api/auth/totp/setup', {});
+      final secret = r['secret'] as String?;
+      if (secret == null || secret.isEmpty) {
+        throw ApiException(500, 'totp_setup_empty');
+      }
       setState(() {
-        _secret = r['secret'] as String?;
+        _secret = secret;
         _uri = r['otpauthUri'] as String?;
       });
     } catch (e) {
-      setState(() => _error = e is ApiException ? e.message : 'Setup failed. Please try again.');
+      setState(() => _error = e is ApiException ? e.message : 'Setup failed. Check your connection and try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -67,10 +71,10 @@ class _TotpSetupScreenState extends State<TotpSetupScreen> {
                   const Text('1. Open Google Authenticator (or iOS Passwords) and add this secret:',
                       style: TextStyle(color: Colors.white)),
                   const SizedBox(height: 12),
-                  if (_busy) const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107))),
+                  if (_busy) Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary)),
                   if (_secret != null) ...[
                     SelectableText(_secret!,
-                        style: const TextStyle(color: Color(0xFFFFC107), fontSize: 18, letterSpacing: 2)),
+                        style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 18, letterSpacing: 2)),
                     if (_uri != null) ...[
                       const SizedBox(height: 8),
                       const Text('Or paste this URI into your authenticator app:',
@@ -95,7 +99,7 @@ class _TotpSetupScreenState extends State<TotpSetupScreen> {
                   ],
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+                    style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
                     onPressed: _busy
                         ? null
                         : () async {
@@ -110,7 +114,12 @@ class _TotpSetupScreenState extends State<TotpSetupScreen> {
                                   .post('/api/auth/totp/verify', {'code': _code.text.trim()});
                               setState(() => _enabled = true);
                             } catch (e) {
-                              setState(() => _error = 'Invalid code — try again.');
+                              // Surface the real backend reason (invalid_code,
+                              // totp_not_set_up, rate_limited, …) instead of
+                              // blaming the code for every failure.
+                              setState(() => _error = e is ApiException
+                                  ? e.message
+                                  : 'Verification failed. Check your connection and try again.');
                             } finally {
                               if (mounted) setState(() => _busy = false);
                             }
