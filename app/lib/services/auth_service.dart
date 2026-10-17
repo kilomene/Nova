@@ -6,18 +6,22 @@ import 'api_client.dart';
 
 /// Firebase Auth wrapper.
 ///
-/// - Tries Firebase init; on failure (no google-services.json) the app
-///   runs in demo mode with a stable local uid.
-/// - Signs in anonymously so EVERY install has a uid: the backend requires
-///   auth on all endpoints, and anonymous auth keeps logged-out browsing
-///   working without friction.
-/// - Email sign-up LINKS to the anonymous account, preserving the uid.
+/// - Initializes Firebase (real google-services.json required; without it
+///   the app runs in demo mode and auth screens are unavailable).
+/// - v1.1: sign-in is MANDATORY. There is no anonymous session — on first
+///   launch with no Firebase user, the app shows the auth gate (login /
+///   signup) before any other screen. Every backend call carries the
+///   Firebase ID token; a 401 anywhere redirects to the gate.
 class AuthService extends ChangeNotifier {
   bool firebaseReady = false;
   User? _fbUser;
   String _demoUid = '';
 
   bool get isDemo => !firebaseReady;
+
+  /// True when a real Firebase user is signed in. The app gate requires this.
+  bool get isSignedIn => _fbUser != null;
+
   String get uid {
     if (_fbUser != null) return _fbUser!.uid;
     return _demoUid;
@@ -31,9 +35,7 @@ class AuthService extends ChangeNotifier {
       await Firebase.initializeApp();
       firebaseReady = true;
       final auth = FirebaseAuth.instance;
-      if (auth.currentUser == null) {
-        await auth.signInAnonymously();
-      }
+      // No anonymous fallback: the auth gate requires an explicit account.
       _fbUser = auth.currentUser;
       auth.authStateChanges().listen((u) {
         _fbUser = u;
@@ -58,18 +60,24 @@ class AuthService extends ChangeNotifier {
 
   Future<void> signUpWithEmail(String email, String password) async {
     _needFirebase();
-    final cred = EmailAuthProvider.credential(email: email, password: password);
-    try {
-      // Preserve the anonymous uid by linking.
-      await _fbUser?.linkWithCredential(cred);
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'email-already-in-use' || e.code == 'credential-already-in-use') {
-        await FirebaseAuth.instance.signInWithCredential(cred);
-      } else {
-        rethrow;
+    final auth = FirebaseAuth.instance;
+    if (_fbUser == null) {
+      // Fresh account (auth gate): create directly.
+      await auth.createUserWithEmailAndPassword(email: email, password: password);
+    } else {
+      final cred = EmailAuthProvider.credential(email: email, password: password);
+      try {
+        // Preserve the existing uid by linking.
+        await _fbUser!.linkWithCredential(cred);
+      } on FirebaseAuthException catch (e) {
+        if (e.code == 'email-already-in-use' || e.code == 'credential-already-in-use') {
+          await auth.signInWithCredential(cred);
+        } else {
+          rethrow;
+        }
       }
     }
-    _fbUser = FirebaseAuth.instance.currentUser;
+    _fbUser = auth.currentUser;
     notifyListeners();
   }
 
@@ -78,6 +86,15 @@ class AuthService extends ChangeNotifier {
     await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
     _fbUser = FirebaseAuth.instance.currentUser;
     notifyListeners();
+  }
+
+  /// Refresh the cached Firebase user (e.g. after an external sign-in
+  /// flow like Google Sign-In performed outside this service).
+  Future<void> refreshUser() async {
+    if (firebaseReady) {
+      _fbUser = FirebaseAuth.instance.currentUser;
+      notifyListeners();
+    }
   }
 
   /// Sign in with username OR email. Usernames resolve to the Firebase email
@@ -97,11 +114,12 @@ class AuthService extends ChangeNotifier {
     await signInWithEmail(email, password);
   }
 
+  /// Sign out fully. Callers route to the auth gate afterwards — there is
+  /// no anonymous fallback session in v1.1.
   Future<void> signOut() async {
     if (firebaseReady) {
       await FirebaseAuth.instance.signOut();
-      await FirebaseAuth.instance.signInAnonymously();
-      _fbUser = FirebaseAuth.instance.currentUser;
+      _fbUser = null;
       notifyListeners();
     }
   }
