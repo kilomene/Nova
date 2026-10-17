@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models.dart';
@@ -8,8 +9,6 @@ import '../widgets/ai_badge.dart';
 import '../widgets/gifts.dart';
 import 'inbox.dart';
 import 'monetization.dart';
-import 'p2p.dart';
-import 'market.dart';
 import 'report.dart';
 import 'settings.dart';
 import 'wallet.dart';
@@ -108,7 +107,14 @@ class _ProfileScreenState extends State<ProfileScreen>
         backgroundColor: bg,
         elevation: 0,
         leading: widget.self
-            ? null
+            ? IconButton(
+                icon: Icon(Icons.person_add_outlined, color: fg),
+                tooltip: 'Find friends',
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Find friends — coming soon')));
+                },
+              )
             : IconButton(
                 icon: Icon(Icons.arrow_back, color: fg),
                 onPressed: () => Navigator.of(context).pop(),
@@ -126,6 +132,33 @@ class _ProfileScreenState extends State<ProfileScreen>
           ],
         ),
         actions: [
+          if (widget.self) ...[
+            IconButton(
+              icon: Icon(Icons.visibility_outlined, color: fg),
+              tooltip: 'Profile views',
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('${formatCount(_followers)} profile views')));
+              },
+            ),
+            IconButton(
+              icon: Icon(Icons.share_outlined, color: fg),
+              tooltip: 'Share profile',
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: 'https://nova.app/@${u.handle}'));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Profile link copied')));
+                }
+              },
+            ),
+            IconButton(
+              icon: Icon(Icons.menu, color: fg),
+              tooltip: 'Menu',
+              onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen())),
+            ),
+          ],
           if (!widget.self)
             IconButton(
               icon: Icon(Icons.flag_outlined, color: fg),
@@ -402,27 +435,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                               MaterialPageRoute(
                                   builder: (_) => const WalletScreen()))),
                       _ActionChip(
-                          icon: Icons.swap_horiz,
-                          label: 'P2P',
-                          isDark: isDark,
-                          onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (_) => const P2PScreen()))),
-                      _ActionChip(
                           icon: Icons.monetization_on_outlined,
                           label: 'Nova Coins',
                           isDark: isDark,
                           onTap: () => Navigator.of(context).push(
                               MaterialPageRoute(
                                   builder: (_) => const CoinsScreen()))),
-                      _ActionChip(
-                          icon: Icons.storefront_outlined,
-                          label: 'Market',
-                          isDark: isDark,
-                          onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (_) =>
-                                      const MarketplaceScreen()))),
                     ],
                   ),
                 ],
