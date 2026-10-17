@@ -11,6 +11,7 @@ import '../utils/format.dart';
 import '../widgets/ai_badge.dart';
 import '../widgets/gifts.dart';
 import '../widgets/nova_icons.dart';
+import '../widgets/video_longpress_menu.dart';
 import 'discover.dart';
 import 'hashtag.dart';
 import 'profile.dart';
@@ -133,6 +134,9 @@ class _VideoCardState extends State<VideoCard> {
   bool _showHeart = false;
   bool _saved = false;
   String? _error;
+  double _speed = 1.0;
+  bool _clearDisplay = false;
+  bool _autoScroll = false;
 
   @override
   void initState() {
@@ -180,13 +184,37 @@ class _VideoCardState extends State<VideoCard> {
     });
   }
 
+  void _openLongPressMenu() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => VideoLongPressMenu(
+        video: widget.video,
+        currentSpeed: _speed,
+        onSpeedChanged: (s) {
+          setState(() => _speed = s);
+          _c?.setPlaybackSpeed(s);
+        },
+        onClearDisplay: () => setState(() => _clearDisplay = true),
+        autoScroll: _autoScroll,
+        onAutoScrollChanged: (b) => setState(() => _autoScroll = b),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final v = widget.video;
     return GestureDetector(
       onDoubleTap: _doubleTapLike,
+      onLongPress: _openLongPressMenu,
       onTap: () {
+        if (_clearDisplay) {
+          setState(() => _clearDisplay = false);
+          return;
+        }
         if (_c != null && _c!.value.isInitialized) {
           setState(() => _c!.value.isPlaying ? _c!.pause() : _c!.play());
         }
@@ -207,6 +235,7 @@ class _VideoCardState extends State<VideoCard> {
             ),
           if (_showHeart)
             const Center(child: Icon(Icons.favorite, size: 110, color: Colors.redAccent)),
+          if (!_clearDisplay)
           // right action rail
           Positioned(
             right: 8,
@@ -298,6 +327,7 @@ class _VideoCardState extends State<VideoCard> {
             ),
           ),
           // bottom caption block
+          if (!_clearDisplay)
           Positioned(
             left: 12,
             right: 80,
