@@ -58,6 +58,27 @@ function threadId(a: string, b: string) {
   return [a, b].sort().join('__');
 }
 
+// HTML-escape for share pages (/v/{id}, /@{handle}, /coins). Any value that
+// originated from user input or the database MUST go through this before
+// being interpolated into HTML — prevents stored XSS via display names,
+// avatar URLs, etc.
+function escHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Avatar URLs rendered into share-page <img src="..."> must be same-origin
+// paths or https: URLs — never javascript: or data: URIs.
+function safeAvatarUrl(u: string): string {
+  if (u.startsWith('/')) return u;
+  if (/^https:\/\/[A-Za-z0-9.-]+(\/|$)/.test(u)) return u;
+  return '/avatars/nova-logo.png';
+}
+
 // Paths a suspended/banned user may still call (appeals, status checks).
 const STATUS_ALLOWLIST = ['/api/users/sync', '/api/strikes/me', '/api/support/tickets'];
 
@@ -376,6 +397,7 @@ export default {
           const headers = new Headers();
           obj.writeHttpMetadata(headers);
           headers.set('cache-control', 'public, max-age=86400');
+          headers.set('x-content-type-options', 'nosniff');
           return new Response(obj.body, { headers });
         }
       }
@@ -565,7 +587,11 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           const row = await env.DB.prepare('SELECT display_name, avatar_url FROM users WHERE handle = ? OR username = ?').bind(handle, handle).first<{ display_name: string; avatar_url: string }>();
           const name = row?.display_name || ('@' + handle);
           const avatar = row?.avatar_url || '/avatars/nova-logo.png';
-          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name} on Nova</title><style>body{background:#000;color:#fff;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0}img{width:120px;height:120px;border-radius:60px}a{background:#fff;color:#000;padding:14px 32px;border-radius:12px;text-decoration:none;font-weight:700;margin-top:24px}</style></head><body><img src="${avatar}" alt="${name}"><h2>${name}</h2><p>@${handle}</p><a href="nova://@${handle}">Open in Nova App</a></body></html>`;
+          // STORED-XSS FIX: escHtml for text content, safeAvatarUrl for the img src.
+          const nameEsc = escHtml(name);
+          const handleEsc = escHtml(handle);
+          const avatarSafe = escHtml(safeAvatarUrl(avatar));
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${nameEsc} on Nova</title><style>body{background:#000;color:#fff;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0}img{width:120px;height:120px;border-radius:60px}a{background:#fff;color:#000;padding:14px 32px;border-radius:12px;text-decoration:none;font-weight:700;margin-top:24px}</style></head><body><img src="${avatarSafe}" alt="${nameEsc}"><h2>${nameEsc}</h2><p>@${handleEsc}</p><a href="nova://@${handleEsc}">Open in Nova App</a></body></html>`;
           return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
           }
         }
@@ -584,6 +610,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           const headers = new Headers();
           obj.writeHttpMetadata(headers);
           headers.set('cache-control', 'private, max-age=900');
+          headers.set('x-content-type-options', 'nosniff');
           return new Response(obj.body, { headers });
         }
       }
@@ -2088,11 +2115,22 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         const form = await request.formData();
         const file = form.get('file');
         if (!(file instanceof File)) throw httpError(400, 'file_required');
+        // Debug logging for 0-byte upload investigation (sizes only — no PII).
+        console.log(`[upload] size=${file.size} type=${file.type}`);
         if (file.size > 200 * 1024 * 1024) throw httpError(413, 'file_too_large');
         if (file.size === 0) throw httpError(400, 'file_empty');
+        // SECURITY: only media types may be uploaded. Attacker-controlled
+        // content-types (text/html, application/javascript, svg) would be
+        // served back via /media/* and could execute as stored XSS.
+        const upCt = (file.type || '').toLowerCase();
+        if (!/^(video|image|audio)\//.test(upCt)) throw httpError(415, 'media_type_not_allowed');
         const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin';
         const key = `${uid}/${newId()}.${ext}`;
-        await env.MEDIA.put(key, file.stream(), {
+        // Read the full buffer first to verify content before R2 put
+        const buf = await file.arrayBuffer();
+        console.log(`[upload] buffer byteLength=${buf.byteLength}`);
+        if (buf.byteLength === 0) throw httpError(400, 'file_empty_buffer');
+        await env.MEDIA.put(key, buf, {
           httpMetadata: { contentType: file.type || 'application/octet-stream' },
         });
         return json({ key, playbackUrl: await signMediaKey(env.MEDIA_SIGNING_SECRET, key) }, 201);
@@ -2250,7 +2288,9 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       if (path === '/api/notify' && method === 'POST') {
         const uid = await guard(request, env, 60);
         const b = await readJson(request) as Record<string, unknown>;
-        const targetUid = vStr((b.targetUid as string) || uid, 'targetUid', 1, 128);
+        // SECURITY: users may only notify their OWN devices. Cross-user push
+        // is an abuse/spam/phishing vector — server-side events use notifyUser().
+        const targetUid = uid;
         const title = vOptStr(b.title, 'title', 120) || 'Nova';
         const body = vOptStr(b.body, 'body', 500);
         const data = (b.data as Record<string, string>) || {};
@@ -2701,6 +2741,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       {
         const m = path.match(/^\/api\/sellers\/id-spec\/([A-Za-z]{2})$/);
         if (m && method === 'GET') {
+          await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 60, 60);
           const spec = idSpecFor(m[1]);
           // Don't expose the regex itself; just the human-facing fields.
           return json({ country: spec.country, name: spec.name, idName: spec.idName, idKey: spec.idKey, example: spec.example, hint: spec.hint });
