@@ -83,7 +83,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     final fg = isDark ? Colors.white : Colors.black87;
     final sub = isDark ? Colors.white60 : Colors.black54;
     final faint = isDark ? Colors.white38 : Colors.black38;
-    const gold = Color(0xFFFFC107);
+    final gold = Theme.of(context).colorScheme.primary;
 
     if (_loading) {
       return Scaffold(
@@ -189,7 +189,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: const LinearGradient(
-                          colors: [Color(0xFFFFD54F), Color(0xFFFF8F00)],
+                          colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.primary],
                         ),
                         boxShadow: [
                           BoxShadow(
@@ -228,7 +228,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                             height: 26,
                             decoration: const BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Color(0xFFFFC107),
+                              color: Theme.of(context).colorScheme.primary,
                             ),
                             child: const Icon(Icons.add,
                                 size: 18, color: Colors.black),
@@ -250,10 +250,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                   children: [
                     Text('@${u.handle}',
                         style: TextStyle(color: fg, fontSize: 15)),
-                    // Facebook-style verification badge
+                    // Verification badge: blue = personal, pink = business
                     if (u.isVerified) ...[
                       const SizedBox(width: 4),
-                      const VerifiedBadge(size: 18),
+                      VerifiedBadge(size: 18, type: u.verificationType),
                     ],
                     if (u.isOfficial) ...[
                       const SizedBox(width: 6),
@@ -571,11 +571,11 @@ class _GoldButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 11),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-              colors: [Color(0xFFFFD54F), Color(0xFFFF8F00)]),
+              colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.primary]),
           borderRadius: BorderRadius.circular(4),
           boxShadow: [
             BoxShadow(
-                color: const Color(0xFFFFC107).withValues(alpha: 0.35),
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
                 blurRadius: 8,
                 offset: const Offset(0, 2)),
           ],
@@ -648,7 +648,7 @@ class _ActionChip extends StatelessWidget {
           children: [
             Icon(icon,
                 size: 16,
-                color: const Color(0xFFFFC107)),
+                color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 6),
             Text(label,
                 style: TextStyle(
