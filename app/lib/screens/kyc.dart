@@ -41,22 +41,22 @@ class _KycScreenState extends State<KycScreen> {
             _StatusCard(status: status, note: state.kyc.reviewerNote),
             const SizedBox(height: 20),
             if (status == 'verified') ...[
-              const Icon(Icons.verified_user, size: 64, color: Colors.greenAccent),
-              const SizedBox(height: 12),
-              const Text('Your identity is verified. Your wallet is unlocked.',
+              Icon(Icons.verified_user, size: 64, color: Colors.greenAccent),
+              SizedBox(height: 12),
+              Text('Your identity is verified. Your wallet is unlocked.',
                   textAlign: TextAlign.center, style: TextStyle(color: Colors.white)),
             ] else if (status == 'pending') ...[
-              const Icon(Icons.hourglass_empty, size: 64, color: Color(0xFFFFC107)),
+              Icon(Icons.hourglass_empty, size: 64, color: Theme.of(context).colorScheme.primary),
               const SizedBox(height: 12),
               const Text('Your documents are under review.\nThis usually takes less than 24 hours.',
                   textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
               const SizedBox(height: 16),
-              const Text('v1 note: verification is manual review by the Nova team.',
+              Text('v1 note: verification is manual review by the Nova team.',
                   textAlign: TextAlign.center, style: TextStyle(color: Colors.white38, fontSize: 12)),
               if (state.isDemo) ...[
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 OutlinedButton(
-                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFFFC107)),
+                  style: OutlinedButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.primary),
                   onPressed: () => state.kyc.demoSimulateApproval(),
                   child: const Text('DEMO: simulate reviewer approval'),
                 ),
@@ -72,12 +72,12 @@ class _KycScreenState extends State<KycScreen> {
               _DocRow(label: 'Selfie', path: _selfie, onPick: () => _pick((p) => _selfie = p),
                   onClear: _selfie == null ? null : () => setState(() => _selfie = null)),
               if (status == 'rejected' && state.kyc.reviewerNote.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text('Reviewer note: ${state.kyc.reviewerNote}', style: const TextStyle(color: Colors.redAccent)),
+                SizedBox(height: 8),
+                Text('Reviewer note: ${state.kyc.reviewerNote}', style: TextStyle(color: Colors.redAccent)),
               ],
-              const SizedBox(height: 20),
+              SizedBox(height: 20),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+                style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
                 onPressed: (_front == null || _back == null || _selfie == null || _busy)
                     ? null
                     : () async {
@@ -117,7 +117,7 @@ class _StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = switch (status) {
       'verified' => Colors.greenAccent,
-      'pending' => const Color(0xFFFFC107),
+      'pending' => Theme.of(context).colorScheme.primary,
       'rejected' => Colors.redAccent,
       _ => Colors.white38,
     };
@@ -172,8 +172,8 @@ class _DocRow extends StatelessWidget {
             child: Text(path == null ? label : path!.split('/').last,
                 style: TextStyle(color: path == null ? Colors.white54 : Colors.white), overflow: TextOverflow.ellipsis),
           ),
-          if (onClear != null) IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: onClear),
-          TextButton(onPressed: onPick, child: Text(path == null ? 'Upload' : 'Change', style: const TextStyle(color: Color(0xFFFFC107)))),
+          if (onClear != null) IconButton(icon: Icon(Icons.close, color: Colors.white54), onPressed: onClear),
+          TextButton(onPressed: onPick, child: Text(path == null ? 'Upload' : 'Change', style: TextStyle(color: Theme.of(context).colorScheme.primary))),
         ],
       ),
     );
