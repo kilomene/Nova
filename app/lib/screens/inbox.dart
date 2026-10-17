@@ -1255,7 +1255,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.black),
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary),
                 onPressed: () {
                   final amt = double.tryParse(amountCtrl.text.trim()) ?? 0;
                   if (amt <= 0) {
