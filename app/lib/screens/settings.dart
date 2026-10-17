@@ -35,10 +35,10 @@ class SettingsScreen extends StatelessWidget {
         children: [
           if (state.isDemo)
             Container(
-              margin: const EdgeInsets.all(12),
-              padding: const EdgeInsets.all(12),
+              margin: EdgeInsets.all(12),
+              padding: EdgeInsets.all(12),
               decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-              child: const Text(
+              child: Text(
                 'DEMO MODE — no cloud backend configured. Everything runs locally. See docs/SETUP.md to wire Firebase + Cloudflare + Flutterwave.',
                 style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12),
               ),
@@ -215,7 +215,7 @@ class SettingsScreen extends StatelessWidget {
               labelText: 'Username (for login)', labelStyle: TextStyle(color: sub)),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
             onPressed: () async {
@@ -313,7 +313,7 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _showStrikes(BuildContext context, AppState state) {    if (state.isDemo) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No strikes in demo mode.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No strikes in demo mode.')));
       return;
     }
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -355,7 +355,7 @@ class SettingsScreen extends StatelessWidget {
 
 class _Header extends StatelessWidget {
   final String text;
-  const _Header(this.text);
+  _Header(this.text);
 
   @override
   Widget build(BuildContext context) {
@@ -372,7 +372,7 @@ class _Row extends StatelessWidget {
   final String title;
   final String? subtitle;
   final VoidCallback? onTap;
-  const _Row({required this.icon, required this.title, this.subtitle, this.onTap});
+  _Row({required this.icon, required this.title, this.subtitle, this.onTap});
 
   @override
   Widget build(BuildContext context) {
