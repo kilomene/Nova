@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/api_client.dart';
 import '../state/app_state.dart';
 
 /// KYC flow: status → document upload → pending → verified.
@@ -85,7 +86,8 @@ class _KycScreenState extends State<KycScreen> {
                           await state.kyc.submit(api: state.api, frontPath: _front!, backPath: _back!, selfiePath: _selfie!);
                           if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Submitted for review.')));
                         } catch (e) {
-                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Submit failed: $e')));
+                          final msg = e is ApiException ? e.message : 'Submit failed. Please try again.';
+                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
                         } finally {
                           if (mounted) setState(() => _busy = false);
                         }
