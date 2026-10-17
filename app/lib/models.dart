@@ -354,6 +354,7 @@ class ChatThread {
   final String peerAvatar;
   final String lastMessage;
   final int updatedAt;
+  final int unreadCount;
 
   ChatThread({
     required this.id,
@@ -363,6 +364,7 @@ class ChatThread {
     this.peerAvatar = '',
     this.lastMessage = '',
     required this.updatedAt,
+    this.unreadCount = 0,
   });
 
   factory ChatThread.fromJson(Map<String, dynamic> j, String selfUid) {
@@ -380,6 +382,7 @@ class ChatThread {
       peerAvatar: '${j['peer_avatar'] ?? ''}',
       lastMessage: '${j['last_message'] ?? j['lastMessage'] ?? ''}',
       updatedAt: (j['updated_at'] ?? j['updatedAt'] ?? 0) as int,
+      unreadCount: (j['unread_count'] ?? 0) as int,
     );
   }
 }
