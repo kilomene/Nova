@@ -17,6 +17,7 @@ class NovaUser {
   final double traderScore;
   final int tradesCompleted;
   final bool isVerified;
+  final String verificationType; // 'personal' | 'business' | ''
 
   NovaUser({
     required this.uid,
@@ -33,6 +34,7 @@ class NovaUser {
     this.traderScore = 0,
     this.tradesCompleted = 0,
     this.isVerified = false,
+    this.verificationType = '',
   });
 
   factory NovaUser.fromJson(Map<String, dynamic> j) => NovaUser(
@@ -50,6 +52,7 @@ class NovaUser {
         traderScore: (j['trader_score'] ?? j['traderScore'] ?? 0).toDouble(),
         tradesCompleted: (j['trades_completed'] ?? j['tradesCompleted'] ?? 0) as int,
         isVerified: (j['is_verified'] ?? j['isVerified'] ?? false) == true,
+        verificationType: '${j['verification_type'] ?? j['verificationType'] ?? ''}',
       );
 
   Map<String, dynamic> toJson() => {
@@ -82,6 +85,7 @@ class NovaVideo {
   final int createdAt;
   bool likedByMe;
   final bool isVerified;
+  final String verificationType; // 'personal' | 'business' | ''
   final bool promoted;
   final bool isAiGenerated;
 
@@ -103,6 +107,7 @@ class NovaVideo {
     required this.createdAt,
     this.likedByMe = false,
     this.isVerified = false,
+    this.verificationType = '',
     this.promoted = false,
     this.isAiGenerated = false,
   });
@@ -136,6 +141,7 @@ class NovaVideo {
       viewCount: (j['view_count'] ?? j['viewCount'] ?? 0) as int,
       createdAt: (j['created_at'] ?? j['createdAt'] ?? 0) as int,
       isVerified: (j['is_verified'] ?? j['isVerified'] ?? false) == true,
+      verificationType: '${j['verification_type'] ?? j['verificationType'] ?? ''}',
       promoted: (j['promoted'] ?? false) == true,
       isAiGenerated: (j['is_ai_generated'] ?? j['isAiGenerated'] ?? false) == true,
     );
@@ -151,6 +157,7 @@ class VideoComment {
   final String text;
   final int createdAt;
   final bool isVerified;
+  final String verificationType; // 'personal' | 'business' | ''
 
   VideoComment({
     required this.id,
@@ -161,6 +168,7 @@ class VideoComment {
     required this.text,
     required this.createdAt,
     this.isVerified = false,
+    this.verificationType = '',
   });
 
   factory VideoComment.fromJson(Map<String, dynamic> j) => VideoComment(
@@ -172,6 +180,7 @@ class VideoComment {
         text: '${j['text'] ?? ''}',
         createdAt: (j['created_at'] ?? 0) as int,
         isVerified: (j['is_verified'] ?? false) == true,
+        verificationType: '${j['verification_type'] ?? ''}',
       );
 }
 
@@ -449,6 +458,7 @@ class LiveSession {
   final int viewerCount;
   final int startedAt;
   final bool isVerified;
+  final String verificationType; // 'personal' | 'business' | ''
 
   LiveSession({
     required this.id,
@@ -460,6 +470,7 @@ class LiveSession {
     this.viewerCount = 0,
     required this.startedAt,
     this.isVerified = false,
+    this.verificationType = '',
   });
 
   factory LiveSession.fromJson(Map<String, dynamic> j) => LiveSession(
@@ -472,6 +483,7 @@ class LiveSession {
         viewerCount: (j['viewer_count'] ?? 0) as int,
         startedAt: (j['started_at'] ?? 0) as int,
         isVerified: (j['is_verified'] ?? false) == true,
+        verificationType: '${j['verification_type'] ?? ''}',
       );
 }
 
