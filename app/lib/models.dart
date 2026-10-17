@@ -2,6 +2,38 @@
 // toJson is used for the local demo store.
 import 'dart:convert';
 
+/// X-style company affiliation: the company (gold badge) this user is
+/// affiliated with. Rendered as a small company-logo square next to the
+/// user's verification badge.
+class Affiliation {
+  final String uid;
+  final String handle;
+  final String displayName;
+  final String avatarUrl;
+
+  const Affiliation({
+    required this.uid,
+    required this.handle,
+    this.displayName = '',
+    this.avatarUrl = '',
+  });
+
+  factory Affiliation.fromJson(Map<String, dynamic> j) => Affiliation(
+        uid: '${j['uid'] ?? ''}',
+        handle: '${j['handle'] ?? ''}',
+        displayName: '${j['display_name'] ?? j['displayName'] ?? ''}',
+        avatarUrl: '${j['avatar_url'] ?? j['avatarUrl'] ?? ''}',
+      );
+}
+
+/// Parses the `affiliated_with` payload attached to users/videos/comments.
+Affiliation? parseAffiliation(dynamic v) {
+  if (v is Map<String, dynamic> && '${v['uid'] ?? ''}'.isNotEmpty) {
+    return Affiliation.fromJson(v);
+  }
+  return null;
+}
+
 class NovaUser {
   final String uid;
   final String handle;
@@ -18,6 +50,7 @@ class NovaUser {
   final int tradesCompleted;
   final bool isVerified;
   final String verificationType; // 'personal' | 'business' | ''
+  final Affiliation? affiliatedWith;
 
   NovaUser({
     required this.uid,
@@ -35,6 +68,7 @@ class NovaUser {
     this.tradesCompleted = 0,
     this.isVerified = false,
     this.verificationType = '',
+    this.affiliatedWith,
   });
 
   factory NovaUser.fromJson(Map<String, dynamic> j) => NovaUser(
@@ -53,6 +87,7 @@ class NovaUser {
         tradesCompleted: (j['trades_completed'] ?? j['tradesCompleted'] ?? 0) as int,
         isVerified: (j['is_verified'] ?? j['isVerified'] ?? false) == true,
         verificationType: '${j['verification_type'] ?? j['verificationType'] ?? ''}',
+        affiliatedWith: parseAffiliation(j['affiliated_with'] ?? j['affiliatedWith']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -86,6 +121,7 @@ class NovaVideo {
   bool likedByMe;
   final bool isVerified;
   final String verificationType; // 'personal' | 'business' | ''
+  final Affiliation? affiliatedWith;
   final bool promoted;
   final bool isAiGenerated;
 
@@ -108,6 +144,7 @@ class NovaVideo {
     this.likedByMe = false,
     this.isVerified = false,
     this.verificationType = '',
+    this.affiliatedWith,
     this.promoted = false,
     this.isAiGenerated = false,
   });
@@ -142,6 +179,7 @@ class NovaVideo {
       createdAt: (j['created_at'] ?? j['createdAt'] ?? 0) as int,
       isVerified: (j['is_verified'] ?? j['isVerified'] ?? false) == true,
       verificationType: '${j['verification_type'] ?? j['verificationType'] ?? ''}',
+      affiliatedWith: parseAffiliation(j['affiliated_with'] ?? j['affiliatedWith']),
       promoted: (j['promoted'] ?? false) == true,
       isAiGenerated: (j['is_ai_generated'] ?? j['isAiGenerated'] ?? false) == true,
     );
@@ -158,6 +196,7 @@ class VideoComment {
   final int createdAt;
   final bool isVerified;
   final String verificationType; // 'personal' | 'business' | ''
+  final Affiliation? affiliatedWith;
 
   VideoComment({
     required this.id,
@@ -169,6 +208,7 @@ class VideoComment {
     required this.createdAt,
     this.isVerified = false,
     this.verificationType = '',
+    this.affiliatedWith,
   });
 
   factory VideoComment.fromJson(Map<String, dynamic> j) => VideoComment(
@@ -181,6 +221,7 @@ class VideoComment {
         createdAt: (j['created_at'] ?? 0) as int,
         isVerified: (j['is_verified'] ?? false) == true,
         verificationType: '${j['verification_type'] ?? ''}',
+        affiliatedWith: parseAffiliation(j['affiliated_with'] ?? j['affiliatedWith']),
       );
 }
 
@@ -459,6 +500,7 @@ class LiveSession {
   final int startedAt;
   final bool isVerified;
   final String verificationType; // 'personal' | 'business' | ''
+  final Affiliation? affiliatedWith;
 
   LiveSession({
     required this.id,
@@ -471,6 +513,7 @@ class LiveSession {
     required this.startedAt,
     this.isVerified = false,
     this.verificationType = '',
+    this.affiliatedWith,
   });
 
   factory LiveSession.fromJson(Map<String, dynamic> j) => LiveSession(
@@ -484,6 +527,7 @@ class LiveSession {
         startedAt: (j['started_at'] ?? 0) as int,
         isVerified: (j['is_verified'] ?? false) == true,
         verificationType: '${j['verification_type'] ?? ''}',
+        affiliatedWith: parseAffiliation(j['affiliated_with'] ?? j['affiliatedWith']),
       );
 }
 
