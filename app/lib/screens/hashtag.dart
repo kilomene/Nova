@@ -64,9 +64,9 @@ class HashtagChip extends StatelessWidget {
     return GestureDetector(
       onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => HashtagScreen(tag: tag))),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFF1a1a1a),
+          color: Color(0xFF1a1a1a),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.4)),
         ),
@@ -234,6 +234,7 @@ class _ViewerCardState extends State<_ViewerCard> {
               Row(children: [
                 Text('@${v.handle}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                 if (v.isVerified) ...[const SizedBox(width: 4), VerifiedBadge(size: 14, type: v.verificationType)],
+                if (v.affiliatedWith != null) ...[const SizedBox(width: 4), AffiliateBadge(avatarUrl: v.affiliatedWith!.avatarUrl, size: 14)],
               ]),
               const SizedBox(height: 6),
               if (v.caption.isNotEmpty) HashtagText(v.caption),
