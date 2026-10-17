@@ -40,7 +40,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       backgroundColor: bg,
       appBar: AppBar(backgroundColor: bg, title: Text('Marketplace', style: TextStyle(color: fg))),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFFFFC107),
+        backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.black,
         child: const Icon(Icons.add),
         // Strict seller onboarding: only verified sellers may list.
@@ -103,8 +103,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(l.title, style: TextStyle(color: fg, fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis),
-                                    const SizedBox(height: 2),
-                                    Text('\$${l.priceUsd.toStringAsFixed(2)} · ${l.asset}', style: const TextStyle(color: Color(0xFFFFC107), fontWeight: FontWeight.bold)),
+                                    SizedBox(height: 2),
+                                    Text('\$${l.priceUsd.toStringAsFixed(2)} · ${l.asset}', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
                                     Row(
                                       children: [
                                         Text('@${l.handle}', style: TextStyle(color: sub, fontSize: 11)),
@@ -168,9 +168,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(listing.title, style: TextStyle(color: fg, fontSize: 22, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
+                  SizedBox(height: 4),
                   Text('\$${listing.priceUsd.toStringAsFixed(2)} · ${listing.asset}',
-                      style: const TextStyle(color: Color(0xFFFFC107), fontSize: 20, fontWeight: FontWeight.bold)),
+                      style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -192,25 +192,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         RadioListTile<String>(
                           value: 'flutterwave',
                           title: Text('Card / mobile money (Flutterwave)', style: TextStyle(color: fg, fontSize: 14)),
-                          activeColor: const Color(0xFFFFC107),
+                          activeColor: Theme.of(context).colorScheme.primary,
                           contentPadding: EdgeInsets.zero,
                           dense: true,
                         ),
                         RadioListTile<String>(
                           value: 'crypto',
                           title: Text('Crypto from Nova wallet (USDC/USDT)', style: TextStyle(color: fg, fontSize: 14)),
-                          activeColor: const Color(0xFFFFC107),
+                          activeColor: Theme.of(context).colorScheme.primary,
                           contentPadding: EdgeInsets.zero,
                           dense: true,
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+                      style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
                       onPressed: () async {
                         try {
                           final r = await state.createOrder(listingId: listing.id, paymentMethod: _payMethod);
@@ -289,9 +289,9 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
               ],
             ),
             TextField(controller: TextEditingController(text: _category), style: TextStyle(color: fg), decoration: InputDecoration(labelText: 'Category', labelStyle: TextStyle(color: sub)), onChanged: (v) => _category = v),
-            const SizedBox(height: 20),
+            SizedBox(height: 20),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
               onPressed: _busy
                   ? null
                   : () async {
