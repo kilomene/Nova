@@ -55,7 +55,14 @@ class ApiException implements Exception {
       case 'invalid_code':
         return 'That code is incorrect. Try again.';
       case 'invalid_email':
+      case 'email_invalid':
         return 'Enter a valid email address.';
+      case 'unknown_package':
+        return 'That coin package is no longer available.';
+      case 'server_misconfigured':
+        return 'Payments are being set up. Please try again later.';
+      case 'upload_failed':
+        return 'The upload did not return a file URL. Please try again.';
       case 'weak_password':
         return 'Use a password of at least 6 characters.';
       case 'checkout_unavailable':
