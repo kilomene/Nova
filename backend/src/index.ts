@@ -90,6 +90,20 @@ async function guard(request: Request, env: Env, perMin = 240): Promise<string> 
   return uid;
 }
 
+// Idempotent schema guard for the is_ai_generated column (migration 001).
+// The canonical migration lives in backend/migrations/; this guard keeps
+// uploads working even if a deploy ever lands before the migration is run.
+let aiColEnsured = false;
+async function ensureAiColumn(db: D1Database): Promise<void> {
+  if (aiColEnsured) return;
+  try {
+    await db.prepare('ALTER TABLE videos ADD COLUMN is_ai_generated INTEGER NOT NULL DEFAULT 0').run();
+  } catch {
+    // Column already exists.
+  }
+  aiColEnsured = true;
+}
+
 // Admin gate: x-admin-key header. Used by the agent-run review console.
 async function adminGuard(request: Request, env: Env): Promise<void> {
   await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 30, 60);
@@ -313,25 +327,36 @@ export default {
         const email = vOptStr((b as Record<string, unknown>).email, 'email', 320);
         const t = now();
         const isNew = !(await env.DB.prepare('SELECT 1 FROM users WHERE uid = ?').bind(uid).first());
-        try {
+        if (isNew) {
+          try {
+            await env.DB.prepare(
+              `INSERT INTO users (uid, handle, username, display_name, avatar_url, country, email, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            )
+              .bind(uid, handle, username || null, displayName, avatarUrl, country, email || null, t, t)
+              .run();
+          } catch {
+            throw httpError(409, 'handle_taken');
+          }
+        } else {
+          // Existing user: update profile fields in place. (A bare INSERT..ON CONFLICT(uid)
+          // would still trip the handle UNIQUE index when the proposed handle already exists.)
           await env.DB.prepare(
-            `INSERT INTO users (uid, handle, username, display_name, avatar_url, country, email, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(uid) DO UPDATE SET display_name=excluded.display_name, avatar_url=excluded.avatar_url,
-               country=CASE WHEN excluded.country != '' THEN excluded.country ELSE users.country END,
-               email=COALESCE(excluded.email, users.email),
-               username=COALESCE(excluded.username, users.username), updated_at=excluded.updated_at`,
+            `UPDATE users SET display_name = ?, avatar_url = ?,
+               country = CASE WHEN ? != '' THEN ? ELSE country END,
+               email = COALESCE(?, email), username = COALESCE(?, username), updated_at = ? WHERE uid = ?`
           )
-            .bind(uid, handle, username || null, displayName, avatarUrl, country, email || null, t, t)
+            .bind(displayName, avatarUrl, country, country, email || null, username || null, t, uid)
             .run();
-        } catch {
-          throw httpError(409, 'handle_taken');
         }
         if (isNew) {
           // Every new user auto-follows the official @nova account.
-          await env.DB.prepare('INSERT OR IGNORE INTO follows (follower_uid, followee_uid, created_at) VALUES (?, ?, ?)')
-            .bind(uid, 'nova_official', t)
-            .run();
+          const official = await env.DB.prepare('SELECT uid FROM users WHERE is_official = 1 LIMIT 1').first<{ uid: string }>();
+          if (official) {
+            await env.DB.prepare('INSERT OR IGNORE INTO follows (follower_uid, followee_uid, created_at) VALUES (?, ?, ?)')
+              .bind(uid, official.uid, t)
+              .run();
+          }
         }
         if (deviceId) {
           // Record the device for repeat-offender tracking (one row per device).
@@ -811,7 +836,11 @@ export default {
         const rightsAffirmed = b.rightsAffirmed === true;
         if (!rightsAffirmed) throw httpError(400, 'rights_affirmation_required');
         const durationSec = vNum(b.durationSec ?? 0, 'durationSec', 0, 36000);
+        // AI-generated declaration: optional for now (defaults to false).
+        // The mandatory uploader toggle ships with the premium upload redesign.
+        const isAiGenerated = b.isAiGenerated === true || b.isAiGenerated === 1 ? 1 : 0;
         const id = newId();
+        await ensureAiColumn(env.DB);
         // High-risk devices: uploads are held for review (quarantined from feeds).
         // Borderline on-device nudity scans also quarantine (review decides; strike only if confirmed).
         const scanVerdict = vOptStr(b.scanVerdict, 'scanVerdict', 20);
@@ -820,10 +849,10 @@ export default {
         if (scanVerdict === 'block') throw httpError(400, 'content_blocked_by_safety_scan');
         const t = now();
         await env.DB.prepare(
-          `INSERT INTO videos (id, uid, caption, hashtags, media_key, media_url, duration_sec, sound_label, audio_key, visibility, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO videos (id, uid, caption, hashtags, media_key, media_url, duration_sec, sound_label, audio_key, visibility, is_ai_generated, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-          .bind(id, uid, caption, JSON.stringify(hashtags), mediaKey, `/media/${mediaKey}`, durationSec, soundLabel, audioKey, visibility, t)
+          .bind(id, uid, caption, JSON.stringify(hashtags), mediaKey, `/media/${mediaKey}`, durationSec, soundLabel, audioKey, visibility, isAiGenerated, t)
           .run();
         if (scanVerdict === 'borderline') {
           // Every borderline scan lands in the review queue — no auto-dismissal.
@@ -1767,6 +1796,8 @@ export default {
         const start = prog?.done || 0;
         if (start >= total) return json({ done: start, total, complete: true });
         const end = Math.min(start + batch, total);
+        const officialUidRow = await env.DB.prepare('SELECT uid FROM users WHERE is_official = 1 LIMIT 1').first<{ uid: string }>();
+        const officialUid = officialUidRow?.uid || '';
         const stmts: D1PreparedStatement[] = [];
         for (let i = start; i < end; i++) {
           const uid = `botf_${newId()}`;
@@ -1776,7 +1807,7 @@ export default {
             env.DB.prepare("INSERT OR IGNORE INTO users (uid, handle, display_name, is_bot, bot_kind, created_at, updated_at) VALUES (?, ?, ?, 1, 'passive', ?, ?)")
               .bind(uid, handle, handle, t, t),
             env.DB.prepare('INSERT OR IGNORE INTO follows (follower_uid, followee_uid, created_at) VALUES (?, ?, ?)')
-              .bind(uid, 'nova_official', t)
+              .bind(uid, officialUid, t)
           );
         }
         // D1 batch: single call with all statements (2000 max per batch).
@@ -1793,7 +1824,8 @@ export default {
         await adminGuard(request, env);
         const prog = await env.DB.prepare("SELECT * FROM fleet_seed_progress WHERE key = 'nova_followers'").first();
         const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE is_bot = 1 AND bot_kind = 'passive'").first<{ n: number }>();
-        const follows = await env.DB.prepare("SELECT COUNT(*) AS n FROM follows WHERE followee_uid = 'nova_official'").first<{ n: number }>();
+        const offUid = await env.DB.prepare('SELECT uid FROM users WHERE is_official = 1 LIMIT 1').first<{ uid: string }>();
+        const follows = offUid ? await env.DB.prepare('SELECT COUNT(*) AS n FROM follows WHERE followee_uid = ?').bind(offUid.uid).first<{ n: number }>() : { n: 0 };
         return json({ progress: prog, passiveBots: count?.n || 0, novaFollowers: follows?.n || 0 });
       }
       // Fleet console: list bots (paginated, labeled).
