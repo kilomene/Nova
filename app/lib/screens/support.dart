@@ -45,9 +45,9 @@ class _SupportScreenState extends State<SupportScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Submit'),
           ),
@@ -68,12 +68,12 @@ class _SupportScreenState extends State<SupportScreen> {
     final state = context.watch<AppState>();
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black, title: const Text('Support')),
+      appBar: AppBar(backgroundColor: Colors.black, title: Text('Support')),
       floatingActionButton: state.isDemo
           ? null
           : FloatingActionButton(
-              backgroundColor: const Color(0xFFFFC107),
-              foregroundColor: Colors.black,
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
               onPressed: _new,
               child: const Icon(Icons.add),
             ),
@@ -88,7 +88,7 @@ class _SupportScreenState extends State<SupportScreen> {
                     return ListTile(
                       leading: Icon(
                         t.status == 'open' ? Icons.mark_unread_chat_alt : Icons.mark_chat_read,
-                        color: const Color(0xFFFFC107),
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                       title: Text(t.subject, style: const TextStyle(color: Colors.white)),
                       subtitle: Text(t.status, style: const TextStyle(color: Colors.white54, fontSize: 12)),
@@ -161,11 +161,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 return Align(
                   alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                   child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(12),
+                    margin: EdgeInsets.symmetric(vertical: 4),
+                    padding: EdgeInsets.all(12),
                     constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
                     decoration: BoxDecoration(
-                      color: mine ? const Color(0xFFFFC107) : const Color(0xFF1a1a1a),
+                      color: mine ? Theme.of(context).colorScheme.primary : Color(0xFF1a1a1a),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Column(
@@ -187,12 +187,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 Expanded(
                   child: TextField(
                     controller: _ctrl,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(hintText: 'Write a reply…', hintStyle: TextStyle(color: Colors.white38)),
+                    style: TextStyle(color: Colors.white),
+                    decoration: InputDecoration(hintText: 'Write a reply…', hintStyle: TextStyle(color: Colors.white38)),
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.send, color: Color(0xFFFFC107)),
+                  icon: Icon(Icons.send, color: Theme.of(context).colorScheme.primary),
                   onPressed: _busy ? null : _send,
                 ),
               ],
