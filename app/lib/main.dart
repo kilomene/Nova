@@ -12,6 +12,10 @@ import 'services/sync_service.dart';
 import 'services/wallet_service.dart';
 import 'state/app_state.dart';
 
+/// Global navigator key: lets the API layer route to the login gate on a
+/// 401 without needing a BuildContext.
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -20,6 +24,18 @@ void main() async {
     baseUrl: AppConfig.apiBaseUrl,
     tokenProvider: () => auth.idToken(),
   );
+  // Any 401 anywhere → clear the session and show the login gate with a
+  // friendly message. Never a raw ApiException string in the UI.
+  api.onUnauthorized = () {
+    if (AuthScreen.gateOpen) return; // already on the gate: no stacking
+    auth.signOut();
+    navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const AuthScreen(gate: true, notice: 'Please log in to continue'),
+      ),
+      (_) => false,
+    );
+  };
   final state = AppState(
     auth: auth,
     api: api,
@@ -46,6 +62,7 @@ class NovaApp extends StatelessWidget {
     return MaterialApp(
       title: 'Nova',
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       theme: ThemeData.dark(useMaterial3: true).copyWith(
         scaffoldBackgroundColor: Colors.black,
         colorScheme: const ColorScheme.dark(
