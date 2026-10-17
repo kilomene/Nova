@@ -280,6 +280,49 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Repost a video to the user's followers. Server endpoint may not exist
+  /// yet — fall back to a local share-count bump so the UI still responds.
+  Future<void> repostVideo(NovaVideo v) async {
+    v.shareCount++;
+    notifyListeners();
+    if (isDemo) return;
+    try {
+      await api.post('/api/videos/${v.id}/repost');
+    } catch (_) {
+      // No server endpoint yet; the local bump stands.
+    }
+  }
+
+  /// Remove a video from the local feed (not-interested signal).
+  void markNotInterested(NovaVideo v) {
+    feed.removeWhere((e) => e.id == v.id);
+    notifyListeners();
+    if (isDemo) return;
+    try {
+      api.post('/api/videos/${v.id}/not-interested');
+    } catch (_) {}
+  }
+
+  /// Download a video's media file to the device's temp dir.
+  Future<void> downloadVideo(NovaVideo v) async {
+    final url = v.mediaUrl;
+    if (url.isEmpty) throw Exception('No media URL');
+    final client = HttpClient();
+    try {
+      final req = await client.getUrl(Uri.parse(url));
+      final resp = await req.close();
+      if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
+      final dir = Directory.systemTemp;
+      final ext = url.contains('.mp4') ? 'mp4' : 'bin';
+      final file = File('${dir.path}/nova_${v.id}.$ext');
+      final sink = file.openWrite();
+      await resp.pipe(sink);
+      await sink.close();
+    } finally {
+      client.close();
+    }
+  }
+
   Future<List<VideoComment>> fetchComments(String videoId) async {
     if (isDemo) {
       return [
