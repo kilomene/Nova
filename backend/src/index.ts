@@ -50,8 +50,19 @@ const COIN_PACKAGES = [
   { id: 'coins_3000', usd: 25, coins: 3000 },
 ] as const;
 
-const VERIFY_PRICE_USD = 25;
-const VERIFY_DAYS = 30;
+const VERIFY_TIERS = {
+  personal: { monthly_usd: 15, color: '0xFF20D5EC', label: 'Personal' },
+  business: { monthly_usd: 65, color: '0xFFFF2E63', label: 'Business' },
+  company: { monthly_usd: 100, color: '0xFFD4AF37', label: 'Company' },
+} as const;
+type VerifyTier = keyof typeof VERIFY_TIERS;
+// Period pricing: 3mo = 3x monthly, 6mo = 5.7x (5% off), 12mo = 10x (2 months free)
+function verifyPriceFor(tier: VerifyTier, months: 3 | 6 | 12): number {
+  const m = VERIFY_TIERS[tier].monthly_usd;
+  if (months === 12) return m * 10;
+  if (months === 6) return Math.round(m * 5.7 * 100) / 100;
+  return m * 3;
+}
 const LIVE_MIN_FOLLOWERS = 1000;
 
 function threadId(a: string, b: string) {
@@ -147,6 +158,26 @@ async function ensureVideoOptionsColumns(db: D1Database): Promise<void> {
   videoOptsEnsured = true;
 }
 
+// TOTP 2FA columns on users (totp_secret, totp_enabled). Deploy-safe: if an
+// older database never ran the schema ALTERs, the endpoints below create the
+// columns lazily instead of 500ing on first use.
+let totpColsEnsured = false;
+async function ensureTotpColumns(db: D1Database): Promise<void> {
+  if (totpColsEnsured) return;
+  const cols = [
+    'ALTER TABLE users ADD COLUMN totp_secret TEXT',
+    'ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0',
+  ];
+  for (const sql of cols) {
+    try {
+      await db.prepare(sql).run();
+    } catch {
+      // Column already exists.
+    }
+  }
+  totpColsEnsured = true;
+}
+
 // Inbox tables: stories (24h expiry), story_views, system_notifications.
 // Deploy-safe: CREATE TABLE IF NOT EXISTS, called lazily per request.
 let inboxTablesEnsured = false;
@@ -202,6 +233,23 @@ async function ensureCoinPurchasesTable(db: D1Database): Promise<void> {
     created_at INTEGER NOT NULL
   )`).run();
   coinPurchasesEnsured = true;
+}
+
+// Deploy-safe: adds verification_type/verification_expires_at to users,
+// and tier to verification_subscriptions, if missing.
+let verificationColsEnsured = false;
+async function ensureVerificationColumns(db: D1Database): Promise<void> {
+  if (verificationColsEnsured) return;
+  try {
+    await db.prepare(`ALTER TABLE users ADD COLUMN verification_type TEXT NOT NULL DEFAULT ''`).run();
+  } catch { /* already exists */ }
+  try {
+    await db.prepare(`ALTER TABLE users ADD COLUMN verification_expires_at INTEGER NOT NULL DEFAULT 0`).run();
+  } catch { /* already exists */ }
+  try {
+    await db.prepare(`ALTER TABLE verification_subscriptions ADD COLUMN tier TEXT NOT NULL DEFAULT 'personal'`).run();
+  } catch { /* already exists or table missing */ }
+  verificationColsEnsured = true;
 }
 
 // Admin gate: x-admin-key header. Used by the agent-run review console.
@@ -273,6 +321,22 @@ async function isVerified(db: D1Database, uid: string): Promise<boolean> {
   return !!r;
 }
 
+/// Returns the active verification tier ('personal'|'business'|'company') or null.
+async function verificationTier(db: D1Database, uid: string): Promise<string | null> {
+  // Fast path: users.verification_type (set at settlement time)
+  try {
+    const u = await db.prepare(
+      "SELECT verification_type FROM users WHERE uid = ? AND verification_expires_at > ?"
+    ).bind(uid, now()).first<{ verification_type: string }>();
+    if (u?.verification_type) return u.verification_type;
+  } catch { /* column may not exist yet */ }
+  // Fallback: subscriptions table
+  const r = await db.prepare(
+    "SELECT tier FROM verification_subscriptions WHERE uid = ? AND status = 'active' AND expires_at > ?"
+  ).bind(uid, now()).first<{ tier: string }>();
+  return r?.tier || null;
+}
+
 // Reputation from real transactions (pillar 5). Review count + average rating
 // feed the seller's trust score, which drives marketplace search ranking,
 // featured/popular-seller placement, and badges.
@@ -316,15 +380,24 @@ interface PublicUser {
   trades_completed: number;
   created_at: number;
   is_verified: boolean;
+  verification_type: string; // 'personal' | 'business' | ''
 }
 
 async function publicUser(db: D1Database, uidOrHandle: string): Promise<PublicUser | null> {
   const row = await db
-    .prepare('SELECT uid, handle, username, display_name, bio, avatar_url, kyc_status, status, is_bot, is_official, is_verified, totp_enabled, trader_score, trades_completed, created_at FROM users WHERE uid = ? OR handle = ? OR username = ?')
+    .prepare('SELECT uid, handle, username, display_name, bio, avatar_url, kyc_status, status, is_bot, is_official, is_verified, verification_type, totp_enabled, trader_score, trades_completed, created_at FROM users WHERE uid = ? OR handle = ? OR username = ?')
     .bind(uidOrHandle, uidOrHandle, uidOrHandle)
     .first<Record<string, unknown>>();
   if (!row) return null;
   const uid = row.uid as string;
+  const verified = !!row.is_verified || !!row.is_official || await isVerified(db, uid);
+  // Business accounts (e.g. @nova company) get the pink badge; personal gets blue.
+  // Fall back to 'business' for official accounts so the company badge stays pink.
+  let vtype = (row.verification_type as string) || '';
+  if (verified && !vtype) {
+    // Check the subscriptions table for the purchased tier, then fall back
+    vtype = (await verificationTier(db, uid)) || (row.is_official ? 'business' : 'personal');
+  }
   return {
     uid,
     handle: row.handle as string,
@@ -340,7 +413,8 @@ async function publicUser(db: D1Database, uidOrHandle: string): Promise<PublicUs
     trader_score: (row.trader_score as number) || 0,
     trades_completed: (row.trades_completed as number) || 0,
     created_at: (row.created_at as number) || 0,
-    is_verified: !!row.is_verified || !!row.is_official || await isVerified(db, uid),
+    is_verified: verified,
+    verification_type: vtype,
   };
 }
 
@@ -702,7 +776,13 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 10, 60);
         const b = await readJson(request) as Record<string, unknown>;
         const identifier = vStr(b.identifier, 'identifier', 1, 320);
-        if (identifier.includes('@')) return json({ email: identifier.toLowerCase(), totpRequired: false });
+        if (identifier.includes('@')) {
+          // Email login must ALSO check totp_enabled — skipping the DB lookup
+          // here silently bypasses 2FA for email sign-ins.
+          const emailRow = await env.DB.prepare('SELECT totp_enabled FROM users WHERE LOWER(email) = ?')
+            .bind(identifier.toLowerCase()).first<{ totp_enabled: number }>();
+          return json({ email: identifier.toLowerCase(), totpRequired: !!emailRow?.totp_enabled });
+        }
         const row = await env.DB.prepare('SELECT email, totp_enabled FROM users WHERE username = ? OR handle = ?')
           .bind(identifier.toLowerCase(), identifier.toLowerCase()).first<{ email: string | null; totp_enabled: number }>();
         if (!row?.email) throw httpError(404, 'account_not_found');
@@ -710,6 +790,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       }
       // TOTP setup: returns otpauth URI + secret (shown once as QR).
       if (path === '/api/auth/totp/setup' && method === 'POST') {
+        await ensureTotpColumns(env.DB);
         const uid = await guard(request, env, 20);
         const { randomBase32, otpauthUri, encryptSecret } = await import('./lib/totp');
         if (!env.MEDIA_SIGNING_SECRET) throw httpError(501, 'server_misconfigured');
@@ -721,6 +802,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       }
       // TOTP verify: confirms the code and enables 2FA.
       if (path === '/api/auth/totp/verify' && method === 'POST') {
+        await ensureTotpColumns(env.DB);
         const uid = await guard(request, env, 20);
         const b = await readJson(request) as Record<string, unknown>;
         const code = vStr(b.code, 'code', 6, 6);
@@ -735,6 +817,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       }
       // TOTP disable (requires a valid code).
       if (path === '/api/auth/totp/disable' && method === 'POST') {
+        await ensureTotpColumns(env.DB);
         const uid = await guard(request, env, 20);
         const b = await readJson(request) as Record<string, unknown>;
         const code = vStr(b.code, 'code', 6, 6);
@@ -749,6 +832,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       }
       // TOTP login challenge (pre-auth, after Firebase password sign-in).
       if (path === '/api/auth/totp/challenge' && method === 'POST') {
+        await ensureTotpColumns(env.DB);
         await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 10, 60);
         const b = await readJson(request) as Record<string, unknown>;
         const uid = vStr(b.uid, 'uid', 1, 128);
@@ -1099,7 +1183,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       if (path === '/api/live' && method === 'GET') {
         await guard(request, env);
         const rows = await env.DB.prepare(
-          `SELECT l.*, u.handle, u.display_name, u.avatar_url FROM live_sessions l
+          `SELECT l.*, u.handle, u.display_name, u.avatar_url, u.verification_type FROM live_sessions l
            JOIN users u ON u.uid = l.uid WHERE l.status = 'live' ORDER BY l.viewer_count DESC, l.started_at DESC LIMIT 50`,
         ).all();
         const out = [];
@@ -1148,9 +1232,27 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       // ---------- verification badge ($25/month) ----------
       if (path === '/api/verification/status' && method === 'GET') {
         const uid = await guard(request, env);
-        const sub = await env.DB.prepare('SELECT status, started_at, expires_at FROM verification_subscriptions WHERE uid = ?').bind(uid).first();
-        const active = !!sub && sub.status === 'active' && (sub.expires_at as number) > now();
-        return json({ verified: active, subscription: sub || null, price_usd: VERIFY_PRICE_USD, days: VERIFY_DAYS });
+        await ensureVerificationColumns(env.DB);
+        const sub = await env.DB.prepare('SELECT status, tier, started_at, expires_at FROM verification_subscriptions WHERE uid = ?').bind(uid).first() as { status: string; tier: string; started_at: number; expires_at: number } | null;
+        const active = !!sub && sub.status === 'active' && sub.expires_at > now();
+        return json({ verified: active, subscription: sub || null, tier: active ? sub.tier : null });
+      }
+      // Verification pricing — public, no auth needed (shown on purchase screen)
+      if (path === '/api/verification/pricing' && method === 'GET') {
+        const tiers: Record<string, unknown> = {};
+        for (const [key, spec] of Object.entries(VERIFY_TIERS)) {
+          tiers[key] = {
+            label: spec.label,
+            color: spec.color,
+            monthly_usd: spec.monthly_usd,
+            periods: {
+              3: verifyPriceFor(key as VerifyTier, 3),
+              6: verifyPriceFor(key as VerifyTier, 6),
+              12: verifyPriceFor(key as VerifyTier, 12),
+            },
+          };
+        }
+        return json({ tiers });
       }
       // ---------- post promotion (TikTok Promote-style) ----------
       // Packages: $7/day -> ~1,000 mixed engagements/day (followers/likes/views).
@@ -1208,15 +1310,60 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         const b = await readJson(request) as Record<string, unknown>;
         const email = vStr(b.email, 'email', 3, 120);
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw httpError(400, 'email_invalid');
-        const txRef = `nova_verify_${uid}_${newId()}`;
+        const tier = vEnum(b.tier, ['personal', 'business', 'company'] as const, 'tier');
+        const monthsNum = vNum(b.months, 'months', 1, 12);
+        if (monthsNum !== 3 && monthsNum !== 6 && monthsNum !== 12) throw httpError(400, 'invalid_months');
+        const months = monthsNum as 3 | 6 | 12;
+        const price = verifyPriceFor(tier, months);
+        // txRef: nova_verify_<tier>_<months>_<uid>_<uuid> (uids never contain '_')
+        const txRef = `nova_verify_${tier}_${months}_${uid}_${newId()}`;
+        await env.DB.prepare(
+          `CREATE TABLE IF NOT EXISTS verification_purchases (
+            tx_ref TEXT PRIMARY KEY, uid TEXT NOT NULL, tier TEXT NOT NULL,
+            months INTEGER NOT NULL, amount_usd REAL NOT NULL, created_at INTEGER NOT NULL)`
+        ).run();
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO verification_purchases (tx_ref, uid, tier, months, amount_usd, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(txRef, uid, tier, months, price, now()).run();
         const data = await flutterwaveCharge(env.FLUTTERWAVE_SECRET_KEY, {
-          amount: VERIFY_PRICE_USD,
+          amount: price,
           currency: 'USD',
           email,
           tx_ref: txRef,
           redirectUrl: `${new URL(request.url).origin}/api/payments/callback`,
         });
-        return json({ checkoutUrl: checkoutLink(data), txRef, flutterwave: data, price_usd: VERIFY_PRICE_USD, days: VERIFY_DAYS });
+        return json({ checkoutUrl: checkoutLink(data), txRef, flutterwave: data, tier, months, price_usd: price });
+      }
+      // Alias: /api/verification/purchase (accepts {type, months} or {tier, months})
+      if (path === '/api/verification/purchase' && method === 'POST') {
+        const uid = await guard(request, env, 20);
+        const b = await readJson(request) as Record<string, unknown>;
+        const email = vStr(b.email, 'email', 3, 120);
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw httpError(400, 'email_invalid');
+        const tier = vEnum(b.type ?? b.tier, ['personal', 'business', 'company'] as const, 'type');
+        const monthsNum = vNum(b.months, 'months', 1, 12);
+        if (monthsNum !== 3 && monthsNum !== 6 && monthsNum !== 12) throw httpError(400, 'invalid_months');
+        const months = monthsNum as 3 | 6 | 12;
+        const price = verifyPriceFor(tier, months);
+        const txRef = `nova_verify_${tier}_${months}_${uid}_${newId()}`;
+        await env.DB.prepare(
+          `CREATE TABLE IF NOT EXISTS verification_purchases (
+            tx_ref TEXT PRIMARY KEY, uid TEXT NOT NULL, tier TEXT NOT NULL,
+            months INTEGER NOT NULL, amount_usd REAL NOT NULL, created_at INTEGER NOT NULL)`
+        ).run();
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO verification_purchases (tx_ref, uid, tier, months, amount_usd, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(txRef, uid, tier, months, price, now()).run();
+        const data = await flutterwaveCharge(env.FLUTTERWAVE_SECRET_KEY, {
+          amount: price,
+          currency: 'USD',
+          email,
+          tx_ref: txRef,
+          redirectUrl: `${new URL(request.url).origin}/api/payments/callback`,
+        });
+        return json({ checkoutUrl: checkoutLink(data), txRef, tier, months, price_usd: price });
       }
 
       // ---------- hashtags ----------
@@ -1244,7 +1391,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           const uid = await guard(request, env);
           const tag = vStr(decodeURIComponent(m[1]), 'tag', 1, 40).toLowerCase();
           const rows = await env.DB.prepare(
-            `SELECT v.*, u.handle, u.display_name, u.avatar_url FROM videos v
+            `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.verification_type FROM videos v
              JOIN users u ON u.uid = v.uid, json_each(v.hashtags) j
              WHERE v.visibility = 'public' AND j.value = ?
                AND ${BLOCK_FILTER}
@@ -1361,7 +1508,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         binds.push(now());
         binds.push(limit);
         const rows = await env.DB.prepare(
-          `SELECT v.*, u.handle, u.display_name, u.avatar_url, ${scoreExpr} AS score
+          `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.verification_type, ${scoreExpr} AS score
            FROM videos v JOIN users u ON u.uid = v.uid
            WHERE ${privacyExpr} AND v.created_at < ?
              AND ${BLOCK_FILTER}
@@ -1413,7 +1560,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           const uid = await guard(request, env);
           const vid = vStr(m[1], 'videoId', 1, 64);
           const rows = await env.DB.prepare(
-            `SELECT c.*, u.handle, u.display_name, u.avatar_url FROM comments c
+            `SELECT c.*, u.handle, u.display_name, u.avatar_url, u.verification_type FROM comments c
              JOIN users u ON u.uid = c.uid WHERE c.video_id = ?
                AND c.uid NOT IN (SELECT blocked_uid FROM blocks WHERE blocker_uid = ?)
                AND c.uid NOT IN (SELECT blocker_uid FROM blocks WHERE blocked_uid = ?)
@@ -2171,10 +2318,10 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           await guard(request, env);
           const targetUid = m[1];
           const row = await env.DB.prepare(
-            'SELECT uid, handle, display_name, avatar_url, evm_address, btc_address, is_verified, kyc_status FROM users WHERE uid = ? OR handle = ?'
+            'SELECT uid, handle, display_name, avatar_url, evm_address, btc_address, is_verified, verification_type, kyc_status FROM users WHERE uid = ? OR handle = ?'
           ).bind(targetUid, targetUid).first<{
             uid: string; handle: string; display_name: string; avatar_url: string;
-            evm_address: string; btc_address: string; is_verified: number; kyc_status: string;
+            evm_address: string; btc_address: string; is_verified: number; verification_type: string; kyc_status: string;
           }>();
           if (!row) throw httpError(404, 'user_not_found');
           return json({
@@ -2185,6 +2332,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
             evm_address: row.evm_address,
             btc_address: row.btc_address,
             is_verified: !!row.is_verified,
+            verification_type: row.verification_type || '',
             kyc_status: row.kyc_status,
           });
         }
@@ -2924,24 +3072,50 @@ async function settleFlutterwaveTx(env: Env, txRef: string, amount: number, curr
     return;
   }
   if (txRef.startsWith('nova_verify_')) {
-    // nova_verify_<fullUid>_<uuid>
-    const uid = txRef.split('_')[2];
-    if (currency !== 'USD' || Math.abs(amount - VERIFY_PRICE_USD) > 0.001) {
-      console.error('verify settlement mismatch');
+    // New format: nova_verify_<tier>_<months>_<uid>_<uuid>
+    // Legacy format: nova_verify_<uid>_<uuid> (treated as personal/1 month)
+    const parts = txRef.split('_');
+    let tier: string, months: number, uid: string;
+    if (parts.length >= 6 && ['personal', 'business', 'company'].includes(parts[2])) {
+      tier = parts[2];
+      months = parseInt(parts[3], 10) || 1;
+      uid = parts.slice(4, -1).join('_'); // uid may contain underscores? no, but safe
+      // Actually uids never contain '_', and uuid is last part
+      uid = parts[4];
+    } else {
+      // Legacy: nova_verify_<uid>_<uuid>
+      tier = 'personal';
+      months = 1;
+      uid = parts[2];
+    }
+    // Verify against the purchase record (source of truth for amount)
+    const purchase = await env.DB.prepare(
+      'SELECT tier, months, amount_usd FROM verification_purchases WHERE tx_ref = ?'
+    ).bind(txRef).first<{ tier: string; months: number; amount_usd: number }>();
+    const expectedTier = purchase?.tier || tier;
+    const expectedMonths = purchase?.months || months;
+    const expectedAmount = purchase?.amount_usd ?? verifyPriceFor(expectedTier as VerifyTier, expectedMonths as 3 | 6 | 12);
+    if (currency !== 'USD' || Math.abs(amount - expectedAmount) > 0.01) {
+      console.error('verify settlement mismatch', JSON.stringify({ txRef, amount, expectedAmount }));
       return;
     }
     const dup = await env.DB.prepare('SELECT 1 FROM verification_subscriptions WHERE tx_ref = ?').bind(txRef).first();
     if (dup) return; // idempotent
     const userRow = await env.DB.prepare('SELECT uid FROM users WHERE uid = ?').bind(uid).first();
     if (!userRow) return;
+    const expiresAt = t + expectedMonths * 30 * 86400 * 1000;
     await env.DB.prepare(
-      `INSERT INTO verification_subscriptions (uid, status, started_at, expires_at, tx_ref, updated_at)
-       VALUES (?, 'active', ?, ?, ?, ?)
-       ON CONFLICT(uid) DO UPDATE SET status='active', started_at=excluded.started_at, expires_at=excluded.expires_at, tx_ref=excluded.tx_ref, updated_at=excluded.updated_at`,
+      `INSERT INTO verification_subscriptions (uid, status, tier, started_at, expires_at, tx_ref, updated_at)
+       VALUES (?, 'active', ?, ?, ?, ?, ?)
+       ON CONFLICT(uid) DO UPDATE SET status='active', tier=excluded.tier, started_at=excluded.started_at, expires_at=excluded.expires_at, tx_ref=excluded.tx_ref, updated_at=excluded.updated_at`,
     )
-      .bind(uid, t, t + VERIFY_DAYS * 86400 * 1000, txRef, t)
+      .bind(uid, expectedTier, t, expiresAt, txRef, t)
       .run();
-    await publishToUser(env, uid, { type: 'verification', verified: true });
+    // Also set verification_type on users table for fast lookups
+    await env.DB.prepare(
+      `UPDATE users SET verification_type = ?, verification_expires_at = ? WHERE uid = ?`
+    ).bind(expectedTier, expiresAt, uid).run().catch(() => {});
+    await publishToUser(env, uid, { type: 'verification', verified: true, tier: expectedTier });
     return;
   }
   if (txRef.startsWith('promo_')) {
