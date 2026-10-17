@@ -37,8 +37,8 @@ class _ReportDialogState extends State<ReportDialog> {
                 for (final r in ReportReasons.all)
                   RadioListTile<String>(
                     value: r,
-                    title: Text(ReportReasons.labels[r]!, style: const TextStyle(color: Colors.white, fontSize: 14)),
-                    activeColor: const Color(0xFFFFC107),
+                    title: Text(ReportReasons.labels[r]!, style: TextStyle(color: Colors.white, fontSize: 14)),
+                    activeColor: Theme.of(context).colorScheme.primary,
                     contentPadding: EdgeInsets.zero,
                     dense: true,
                   ),
@@ -48,9 +48,9 @@ class _ReportDialogState extends State<ReportDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text('Cancel')),
         ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+          style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
           onPressed: _busy
               ? null
               : () async {
