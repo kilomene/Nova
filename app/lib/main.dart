@@ -68,6 +68,7 @@ class NovaApp extends StatelessWidget {
         scaffoldBackgroundColor: Colors.white,
         colorScheme: const ColorScheme.light(
           primary: Colors.black,
+          onPrimary: Colors.white,
           secondary: Color(0xFF20D5EC),
           surface: Color(0xFFF5F5F5),
         ),
@@ -76,18 +77,43 @@ class NovaApp extends StatelessWidget {
           enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
           focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black)),
         ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(foregroundColor: Colors.black),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(foregroundColor: Colors.black),
+        ),
       ),
       darkTheme: ThemeData.dark(useMaterial3: true).copyWith(
         scaffoldBackgroundColor: Colors.black,
         colorScheme: const ColorScheme.dark(
           primary: Colors.white,
+          onPrimary: Colors.black,
           secondary: Color(0xFF20D5EC),
-          surface: Color(0xFF161616),
+          surface: Color(0xFF1A1A1A),
         ),
         appBarTheme: const AppBarTheme(backgroundColor: Colors.black, foregroundColor: Colors.white),
         inputDecorationTheme: const InputDecorationTheme(
           enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
           focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(foregroundColor: Colors.white),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
         ),
       ),
       themeMode: themeMode,
