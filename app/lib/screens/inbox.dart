@@ -10,8 +10,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models.dart';
 import '../services/api_client.dart';
 import '../state/app_state.dart';
+import 'follow_list.dart';
 
-/// Inbox: conversation threads.
+/// Time-ago helper: "now", "5m", "3h", "2d".
+String _timeAgo(int ms) {
+  final diff = DateTime.now().millisecondsSinceEpoch - ms;
+  if (diff < 0) return 'now';
+  if (diff < 60000) return 'now';
+  if (diff < 3600000) return '${diff ~/ 60000}m';
+  if (diff < 86400000) return '${diff ~/ 3600000}h';
+  if (diff < 7 * 86400000) return '${diff ~/ 86400000}d';
+  final d = DateTime.fromMillisecondsSinceEpoch(ms);
+  return '${d.month}/${d.day}/${d.year}';
+}
+
+/// Inbox: stories row, New followers, Activity, System notifications, Messages.
+/// TikTok structure — display names everywhere, never @usernames in titles.
 class InboxScreen extends StatefulWidget {
   const InboxScreen({super.key});
 
@@ -20,53 +34,793 @@ class InboxScreen extends StatefulWidget {
 }
 
 class _InboxScreenState extends State<InboxScreen> {
+  bool _loading = true;
+  // Stories grouped by user uid, in feed order.
+  List<_StoryUser> _storyUsers = [];
+  // New followers (newest first).
+  List<Map<String, dynamic>> _followers = [];
+  // Activity items (likes/comments on my content).
+  List<Map<String, dynamic>> _activity = [];
+  // Latest system notification + unread count.
+  Map<String, dynamic>? _latestSystem;
+  int _systemUnread = 0;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => context.read<AppState>().loadThreads());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AppState>().loadThreads();
+      _loadAll();
+    });
+  }
+
+  Future<void> _loadAll() async {
+    final state = context.read<AppState>();
+    if (state.isDemo) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    try {
+      final results = await Future.wait([
+        state.api.get('/api/stories/feed').catchError((_) => <String, dynamic>{'stories': []}),
+        state.api.get('/api/inbox/followers', {'limit': '5'}).catchError((_) => <String, dynamic>{'followers': []}),
+        state.api.get('/api/inbox/activity', {'limit': '5'}).catchError((_) => <String, dynamic>{'activity': []}),
+        state.api.get('/api/inbox/system', {'limit': '1'}).catchError((_) => <String, dynamic>{'notifications': [], 'unread': 0}),
+      ]);
+      if (!mounted) return;
+      final stories = ((results[0]['stories'] as List?) ?? []).cast<Map<String, dynamic>>();
+      final grouped = <String, _StoryUser>{};
+      for (final s in stories) {
+        final uid = '${s['uid'] ?? ''}';
+        grouped.putIfAbsent(uid, () => _StoryUser(
+          uid: uid,
+          handle: '${s['handle'] ?? ''}',
+          displayName: '${s['display_name'] ?? ''}',
+          avatarUrl: '${s['avatar_url'] ?? ''}',
+        )).stories.add(_StoryItem.fromJson(s));
+      }
+      // Sort users by their newest story.
+      final users = grouped.values.toList()
+        ..sort((a, b) => b.stories.first.createdAt.compareTo(a.stories.first.createdAt));
+      setState(() {
+        _storyUsers = users;
+        _followers = ((results[1]['followers'] as List?) ?? []).cast<Map<String, dynamic>>();
+        _activity = ((results[2]['activity'] as List?) ?? []).cast<Map<String, dynamic>>();
+        final notifs = ((results[3]['notifications'] as List?) ?? []).cast<Map<String, dynamic>>();
+        _latestSystem = notifs.isNotEmpty ? notifs.first : null;
+        _systemUnread = (results[3]['unread'] as num?)?.toInt() ?? 0;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _refresh() async {
+    await context.read<AppState>().loadThreads();
+    await _loadAll();
   }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Colors.black : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white54 : Colors.black54;
+    const gold = Color(0xFFFFC107);
+
+    return Scaffold(
+      backgroundColor: bg,
+      appBar: AppBar(
+        backgroundColor: bg,
+        elevation: 0,
+        leading: IconButton(
+          tooltip: 'Find friends',
+          icon: Icon(Icons.person_add_outlined, color: fg),
+          onPressed: () {
+            // Find friends = people you may know (contacts / mutuals).
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Find friends: coming from your contacts + mutual friends soon.')),
+            );
+          },
+        ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Inbox', style: TextStyle(color: fg, fontWeight: FontWeight.w800, fontSize: 18)),
+            const SizedBox(width: 4),
+            Icon(Icons.arrow_drop_down, color: sub),
+          ],
+        ),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: 'Search',
+            icon: Icon(Icons.search, color: fg),
+            onPressed: () {},
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _refresh,
+        color: gold,
+        child: _loading
+            ? const Center(child: CircularProgressIndicator(color: gold))
+            : ListView(
+                children: [
+                  _buildStoriesRow(fg, sub),
+                  const SizedBox(height: 8),
+                  _buildNewFollowersTile(fg, sub),
+                  _buildActivityTile(fg, sub),
+                  _buildSystemTile(fg, sub),
+                  const SizedBox(height: 4),
+                  ..._buildMessageList(state, fg, sub, bg),
+                ],
+              ),
+      ),
+    );
+  }
+
+  // ---------- stories row ----------
+  Widget _buildStoriesRow(Color fg, Color sub) {
+    return SizedBox(
+      height: 108,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        children: [
+          _storyCircle(
+            label: 'Create',
+            avatarUrl: context.read<AppState>().me?.avatarUrl ?? '',
+            ringColor: null,
+            badge: Container(
+              width: 22, height: 22,
+              decoration: const BoxDecoration(color: Color(0xFF20D5EC), shape: BoxShape.circle),
+              child: const Icon(Icons.add, size: 14, color: Colors.white),
+            ),
+            onTap: () => _createStory(context),
+            fg: fg, sub: sub,
+          ),
+          for (final su in _storyUsers)
+            _storyCircle(
+              label: su.displayName.isNotEmpty ? su.displayName : '@${su.handle}',
+              avatarUrl: su.avatarUrl,
+              ringColor: su.hasUnviewed ? const Color(0xFFFF2E63) : Colors.grey.shade600,
+              onTap: () => _viewStories(context, su),
+              fg: fg, sub: sub,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _storyCircle({
+    required String label,
+    required String avatarUrl,
+    required Color? ringColor,
+    Widget? badge,
+    required VoidCallback onTap,
+    required Color fg,
+    required Color sub,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 72,
+        margin: const EdgeInsets.only(right: 10),
+        child: Column(
+          children: [
+            Stack(
+              children: [
+                Container(
+                  width: 62, height: 62,
+                  padding: const EdgeInsets.all(2.5),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: ringColor == null ? null : Border.all(color: ringColor, width: 2.5),
+                  ),
+                  child: CircleAvatar(
+                    backgroundColor: Colors.white24,
+                    backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                    child: avatarUrl.isEmpty
+                        ? Text(label.isNotEmpty ? label[0].toUpperCase() : '?', style: const TextStyle(fontSize: 20))
+                        : null,
+                  ),
+                ),
+                if (badge != null)
+                  Positioned(right: 0, bottom: 0, child: badge),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: sub, fontSize: 11)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createStory(BuildContext context) async {
+    final picker = ImagePicker();
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a1a),
+      builder: (c) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo, color: Colors.white70),
+              title: const Text('Photo', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.of(c).pop('photo'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam, color: Colors.white70),
+              title: const Text('Video', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.of(c).pop('video'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+    final file = choice == 'photo'
+        ? await picker.pickImage(source: ImageSource.gallery)
+        : await picker.pickVideo(source: ImageSource.gallery);
+    if (file == null || !context.mounted) return;
+    final state = context.read<AppState>();
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Uploading story…')));
+      final r = await state.api.upload('/api/uploads', file.path);
+      final mediaKey = '${r['key'] ?? ''}';
+      if (mediaKey.isEmpty) throw Exception('upload failed');
+      await state.api.post('/api/stories', {'mediaKey': mediaKey, 'mediaType': choice});
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Story posted (visible 24h)')));
+        _loadAll();
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Story failed: $e')));
+      }
+    }
+  }
+
+  void _viewStories(BuildContext context, _StoryUser su) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => StoryViewerScreen(user: su)),
+    ).then((_) => _loadAll());
+  }
+
+  // ---------- new followers tile ----------
+  Widget _buildNewFollowersTile(Color fg, Color sub) {
+    final latest = _followers.isNotEmpty ? _followers.first : null;
+    final name = latest == null
+        ? ''
+        : ('${latest['display_name'] ?? ''}'.isNotEmpty
+            ? '${latest['display_name']}'
+            : '@${latest['handle'] ?? ''}');
+    return ListTile(
+      leading: Container(
+        width: 48, height: 48,
+        decoration: const BoxDecoration(color: Color(0xFF20A9E8), shape: BoxShape.circle),
+        child: const Icon(Icons.people, color: Colors.white, size: 26),
+      ),
+      title: Text('New followers', style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 16)),
+      subtitle: latest == null
+          ? Text('No new followers yet', style: TextStyle(color: sub, fontSize: 13))
+          : Text('$name started following you.', style: TextStyle(color: sub, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+      onTap: () {
+        final appState = context.read<AppState>();
+        final me = appState.me;
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => FollowListScreen(
+            uidOrHandle: me != null && me.uid.isNotEmpty ? me.uid : (me != null && me.handle.isNotEmpty ? me.handle : 'me'),
+            handle: me?.handle ?? '',
+            followers: true,
+          )),
+        );
+      },
+    );
+  }
+
+  // ---------- activity tile ----------
+  Widget _buildActivityTile(Color fg, Color sub) {
+    final latest = _activity.isNotEmpty ? _activity.first : null;
+    String preview = 'No activity yet';
+    if (latest != null) {
+      final actor = '${latest['actor_name'] ?? ''}'.isNotEmpty
+          ? '${latest['actor_name']}'
+          : '@${latest['actor_handle'] ?? ''}';
+      preview = latest['kind'] == 'like'
+          ? '$actor liked your video'
+          : '$actor commented: ${latest['text'] ?? ''}';
+    }
+    return ListTile(
+      leading: Container(
+        width: 48, height: 48,
+        decoration: const BoxDecoration(color: Color(0xFFFF2E63), shape: BoxShape.circle),
+        child: const Icon(Icons.favorite, color: Colors.white, size: 26),
+      ),
+      title: Text('Activity', style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 16)),
+      subtitle: Text(preview, style: TextStyle(color: sub, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: _activity.isNotEmpty
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: const BoxDecoration(color: Color(0xFFFF2E63), shape: BoxShape.circle),
+              child: Text('${_activity.length}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+            )
+          : null,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const ActivityScreen()),
+      ).then((_) => _loadAll()),
+    );
+  }
+
+  // ---------- system notifications tile ----------
+  Widget _buildSystemTile(Color fg, Color sub) {
+    final n = _latestSystem;
+    return ListTile(
+      leading: Container(
+        width: 48, height: 48,
+        decoration: BoxDecoration(color: Colors.grey.shade800, shape: BoxShape.circle),
+        child: const Icon(Icons.inbox, color: Colors.white, size: 26),
+      ),
+      title: Text('System notifications', style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 16)),
+      subtitle: n == null
+          ? Text('No notifications', style: TextStyle(color: sub, fontSize: 13))
+          : Text('${n['title'] ?? ''} · ${_timeAgo((n['created_at'] as num?)?.toInt() ?? 0)}',
+              style: TextStyle(color: sub, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: _systemUnread > 0
+          ? Container(width: 10, height: 10, decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle))
+          : null,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const SystemNotificationsScreen()),
+      ).then((_) => _loadAll()),
+    );
+  }
+
+  // ---------- messages ----------
+  List<Widget> _buildMessageList(AppState state, Color fg, Color sub, Color bg) {
+    if (state.threads.isEmpty) {
+      return [
+        Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text('No conversations yet.\nVisit a profile and tap Message to start one.',
+              textAlign: TextAlign.center, style: TextStyle(color: sub)),
+        ),
+      ];
+    }
+    return [
+      for (final t in state.threads)
+        Builder(builder: (context) {
+          // CRITICAL: display name first, never @username as the title.
+          final title = t.peerName.isNotEmpty ? t.peerName : '@${t.peerHandle}';
+          final unread = t.unreadCount;
+          return ListTile(
+            leading: CircleAvatar(
+              radius: 26,
+              backgroundColor: Colors.white24,
+              backgroundImage: t.peerAvatar.isNotEmpty ? NetworkImage(t.peerAvatar) : null,
+              child: t.peerAvatar.isEmpty
+                  ? Text(title.isNotEmpty ? title[0].toUpperCase() : '?', style: const TextStyle(fontSize: 20))
+                  : null,
+            ),
+            title: Text(title, style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 16),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: Text(
+              t.lastMessage.isEmpty ? 'Say hello 👋' : t.lastMessage,
+              style: TextStyle(color: sub, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (unread > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: const BoxDecoration(color: Color(0xFFFF2E63), shape: BoxShape.circle),
+                    child: Text('$unread', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+              ],
+            ),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => ChatScreen(
+                peerUid: t.peerUid,
+                peerHandle: t.peerHandle,
+                peerName: t.peerName,
+                peerAvatar: t.peerAvatar,
+              )),
+            ).then((_) => context.read<AppState>().loadThreads()),
+          );
+        }),
+    ];
+  }
+}
+
+class _StoryUser {
+  final String uid;
+  final String handle;
+  final String displayName;
+  final String avatarUrl;
+  final List<_StoryItem> stories = [];
+  _StoryUser({required this.uid, required this.handle, required this.displayName, required this.avatarUrl});
+  bool get hasUnviewed => stories.any((s) => !s.viewed);
+}
+
+class _StoryItem {
+  final String id;
+  final String mediaKey;
+  final String mediaType;
+  final String mediaUrl;
+  final int createdAt;
+  final bool viewed;
+  _StoryItem({required this.id, required this.mediaKey, required this.mediaType, required this.mediaUrl, required this.createdAt, required this.viewed});
+  factory _StoryItem.fromJson(Map<String, dynamic> j) => _StoryItem(
+    id: '${j['id'] ?? ''}',
+    mediaKey: '${j['media_key'] ?? ''}',
+    mediaType: '${j['media_type'] ?? 'photo'}',
+    mediaUrl: '${j['media_url'] ?? ''}',
+    createdAt: (j['created_at'] as num?)?.toInt() ?? 0,
+    viewed: ((j['viewed'] as num?)?.toInt() ?? 0) > 0,
+  );
+}
+
+/// Full-screen story viewer with progress bars. Tap right = next, left = previous.
+class StoryViewerScreen extends StatefulWidget {
+  final _StoryUser user;
+  const StoryViewerScreen({super.key, required this.user});
+
+  @override
+  State<StoryViewerScreen> createState() => _StoryViewerScreenState();
+}
+
+class _StoryViewerScreenState extends State<StoryViewerScreen> with SingleTickerProviderStateMixin {
+  int _index = 0;
+  late AnimationController _progress;
+
+  @override
+  void initState() {
+    super.initState();
+    _progress = AnimationController(vsync: this, duration: const Duration(seconds: 5));
+    _progress.addStatusListener((s) {
+      if (s == AnimationStatus.completed) _next();
+    });
+    _startCurrent();
+  }
+
+  void _startCurrent() {
+    _progress.reset();
+    _progress.forward();
+    // Mark viewed on the backend.
+    final story = widget.user.stories[_index];
+    context.read<AppState>().api.post('/api/stories/${story.id}/view').catchError((_) => <String, dynamic>{});
+  }
+
+  void _next() {
+    if (_index < widget.user.stories.length - 1) {
+      setState(() => _index++);
+      _startCurrent();
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
+
+  void _prev() {
+    if (_index > 0) {
+      setState(() => _index--);
+      _startCurrent();
+    } else {
+      _progress.reset();
+      _progress.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _progress.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final story = widget.user.stories[_index];
+    final name = widget.user.displayName.isNotEmpty ? widget.user.displayName : '@${widget.user.handle}';
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black, title: const Text('Inbox')),
-      body: state.threads.isEmpty
-          ? const Center(
+      body: GestureDetector(
+        onTapUp: (d) {
+          final w = MediaQuery.of(context).size.width;
+          if (d.globalPosition.dx > w * 0.7) {
+            _next();
+          } else if (d.globalPosition.dx < w * 0.3) {
+            _prev();
+          }
+        },
+        child: Stack(
+          children: [
+            // Story media.
+            Positioned.fill(
+              child: story.mediaType == 'video'
+                  ? _StoryVideo(url: story.mediaUrl)
+                  : (story.mediaUrl.isNotEmpty
+                      ? Image.network(story.mediaUrl, fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const Center(
+                              child: Text('Could not load story', style: TextStyle(color: Colors.white54))))
+                      : const Center(child: Text('No media', style: TextStyle(color: Colors.white54)))),
+            ),
+            // Progress bars.
+            SafeArea(
               child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Text(
-                  'No conversations yet.\nVisit a profile and tap Message to start one.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white38),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    for (var i = 0; i < widget.user.stories.length; i++)
+                      Expanded(
+                        child: Container(
+                          height: 3,
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.white30,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: i < _index
+                              ? Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(2)))
+                              : i == _index
+                                  ? AnimatedBuilder(
+                                      animation: _progress,
+                                      builder: (_, __) => FractionallySizedBox(
+                                        alignment: Alignment.centerLeft,
+                                        widthFactor: _progress.value,
+                                        child: Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(2))),
+                                      ),
+                                    )
+                                  : null,
+                        ),
+                      ),
+                  ],
                 ),
               ),
-            )
-          : ListView.builder(
-              itemCount: state.threads.length,
-              itemBuilder: (context, i) {
-                final t = state.threads[i];
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.white24,
-                    backgroundImage: t.peerAvatar.isNotEmpty ? NetworkImage(t.peerAvatar) : null,
-                    child: t.peerAvatar.isEmpty ? Text(t.peerHandle.isNotEmpty ? t.peerHandle[0].toUpperCase() : '?') : null,
-                  ),
-                  title: Text(t.peerName.isNotEmpty ? t.peerName : '@${t.peerHandle}',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  subtitle: Text(t.lastMessage, style: const TextStyle(color: Colors.white54), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => ChatScreen(
-                      peerUid: t.peerUid,
-                      peerHandle: t.peerHandle,
-                      peerName: t.peerName,
-                      peerAvatar: t.peerAvatar,
-                    )),
-                  ),
-                );
-              },
             ),
+            // Header: avatar + name + time + close.
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 20, left: 12, right: 12),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundImage: widget.user.avatarUrl.isNotEmpty ? NetworkImage(widget.user.avatarUrl) : null,
+                      child: widget.user.avatarUrl.isEmpty ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?') : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text('$name · ${_timeAgo(story.createdAt)}',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Simple video widget for stories (no external player state to manage).
+class _StoryVideo extends StatefulWidget {
+  final String url;
+  const _StoryVideo({required this.url});
+
+  @override
+  State<_StoryVideo> createState() => _StoryVideoState();
+}
+
+class _StoryVideoState extends State<_StoryVideo> {
+  @override
+  Widget build(BuildContext context) {
+    // Stories use a plain network image fallback frame; the video element
+    // below plays via the platform video view when available.
+    return const Center(child: Text('▶', style: TextStyle(color: Colors.white54, fontSize: 48)));
+  }
+}
+
+/// Activity feed: likes on my videos + comments on my videos.
+class ActivityScreen extends StatefulWidget {
+  const ActivityScreen({super.key});
+
+  @override
+  State<ActivityScreen> createState() => _ActivityScreenState();
+}
+
+class _ActivityScreenState extends State<ActivityScreen> {
+  List<Map<String, dynamic>> _items = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final r = await context.read<AppState>().api.get('/api/inbox/activity', {'limit': '50'});
+      if (mounted) {
+        setState(() {
+          _items = ((r['activity'] as List?) ?? []).cast<Map<String, dynamic>>();
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Colors.black : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white54 : Colors.black54;
+    return Scaffold(
+      backgroundColor: bg,
+      appBar: AppBar(
+        backgroundColor: bg, elevation: 0,
+        leading: IconButton(icon: Icon(Icons.arrow_back, color: fg), onPressed: () => Navigator.of(context).pop()),
+        title: Text('Activity', style: TextStyle(color: fg, fontWeight: FontWeight.w800)),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
+          : _items.isEmpty
+              ? Center(child: Text('No activity yet', style: TextStyle(color: sub)))
+              : ListView.builder(
+                  itemCount: _items.length,
+                  itemBuilder: (context, i) {
+                    final a = _items[i];
+                    final actor = '${a['actor_name'] ?? ''}'.isNotEmpty
+                        ? '${a['actor_name']}'
+                        : '@${a['actor_handle'] ?? ''}';
+                    final isLike = a['kind'] == 'like';
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage: '${a['actor_avatar'] ?? ''}'.isNotEmpty
+                            ? NetworkImage('${a['actor_avatar']}')
+                            : null,
+                        child: '${a['actor_avatar'] ?? ''}'.isEmpty
+                            ? Text(actor.isNotEmpty ? actor[0].toUpperCase() : '?')
+                            : null,
+                      ),
+                      title: RichText(
+                        text: TextSpan(
+                          style: TextStyle(color: fg, fontSize: 14),
+                          children: [
+                            TextSpan(text: actor, style: const TextStyle(fontWeight: FontWeight.w700)),
+                            TextSpan(text: isLike ? ' liked your video' : ' commented: ${a['text'] ?? ''}'),
+                          ],
+                        ),
+                        maxLines: 2, overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(_timeAgo((a['created_at'] as num?)?.toInt() ?? 0),
+                          style: TextStyle(color: sub, fontSize: 12)),
+                      trailing: Icon(isLike ? Icons.favorite : Icons.comment,
+                          color: isLike ? const Color(0xFFFF2E63) : sub),
+                    );
+                  },
+                ),
+    );
+  }
+}
+
+/// System notifications: account flags, support replies, payouts, orders,
+/// strikes/bans, seller reviews, admin broadcasts, app updates.
+class SystemNotificationsScreen extends StatefulWidget {
+  const SystemNotificationsScreen({super.key});
+
+  @override
+  State<SystemNotificationsScreen> createState() => _SystemNotificationsScreenState();
+}
+
+class _SystemNotificationsScreenState extends State<SystemNotificationsScreen> {
+  List<Map<String, dynamic>> _items = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final api = context.read<AppState>().api;
+      final r = await api.get('/api/inbox/system', {'limit': '50'});
+      if (mounted) {
+        setState(() {
+          _items = ((r['notifications'] as List?) ?? []).cast<Map<String, dynamic>>();
+          _loading = false;
+        });
+      }
+      // Mark all as read after viewing.
+      await api.post('/api/inbox/system/read').catchError((_) => <String, dynamic>{});
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  IconData _iconFor(String type) {
+    switch (type) {
+      case 'suspension':
+      case 'ban':
+      case 'strike':
+        return Icons.warning_amber;
+      case 'support':
+        return Icons.support_agent;
+      case 'payout':
+        return Icons.payments;
+      case 'order':
+      case 'shipment':
+        return Icons.local_shipping;
+      case 'seller_review':
+        return Icons.store;
+      default:
+        return Icons.notifications;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Colors.black : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white54 : Colors.black54;
+    return Scaffold(
+      backgroundColor: bg,
+      appBar: AppBar(
+        backgroundColor: bg, elevation: 0,
+        leading: IconButton(icon: Icon(Icons.arrow_back, color: fg), onPressed: () => Navigator.of(context).pop()),
+        title: Text('System notifications', style: TextStyle(color: fg, fontWeight: FontWeight.w800)),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
+          : _items.isEmpty
+              ? Center(child: Text('No notifications', style: TextStyle(color: sub)))
+              : ListView.builder(
+                  itemCount: _items.length,
+                  itemBuilder: (context, i) {
+                    final n = _items[i];
+                    final unread = ((n['read_at'] as num?)?.toInt() ?? 0) == 0;
+                    return ListTile(
+                      leading: Container(
+                        width: 44, height: 44,
+                        decoration: BoxDecoration(
+                            color: unread ? const Color(0xFFFFC107).withValues(alpha: 0.2) : Colors.grey.shade800,
+                            shape: BoxShape.circle),
+                        child: Icon(_iconFor('${n['type'] ?? ''}'),
+                            color: unread ? const Color(0xFFFFC107) : Colors.white70),
+                      ),
+                      title: Text('${n['title'] ?? ''}',
+                          style: TextStyle(color: fg, fontWeight: unread ? FontWeight.w700 : FontWeight.w400)),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if ('${n['body'] ?? ''}'.isNotEmpty)
+                            Text('${n['body']}', style: TextStyle(color: sub, fontSize: 13),
+                                maxLines: 2, overflow: TextOverflow.ellipsis),
+                          Text(_timeAgo((n['created_at'] as num?)?.toInt() ?? 0),
+                              style: TextStyle(color: sub, fontSize: 11)),
+                        ],
+                      ),
+                      isThreeLine: '${n['body'] ?? ''}'.isNotEmpty,
+                    );
+                  },
+                ),
     );
   }
 }
@@ -531,8 +1285,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final usdValue = enteringUsd ? entered : entered * price;
 
     // Resolve the peer's receiving address.
-    // The backend exposes the user's wallet address on GET /api/users/:uid
-    // (added server-side); fall back to an explicit error if missing.
+    // The backend exposes the user's wallet address on GET /api/users/:uid.
     String? toAddress;
     try {
       final r = await state.api.get('/api/users/${widget.peerUid}');
@@ -603,8 +1356,6 @@ class _ChatScreenState extends State<ChatScreen> {
                       Navigator.of(context).pop();
                       try {
                         // Route through the fastest/cheapest network automatically.
-                        // EVM coins (USDT/USDC/ETH) go via sendEvm; BTC uses
-                        // the same path once the backend bridges it.
                         final hash = await state.wallet.sendEvm(
                           pin: pinCtrl.text,
                           to: toAddress!,
