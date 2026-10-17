@@ -18,7 +18,7 @@
 
 import { SyncHub, publishToUser } from './do/sync';
 import { RateLimit, rateCheck } from './do/ratelimit';
-import { flutterwaveCharge, flutterwaveVerify, verifyWebhookSignature } from './lib/flutterwave';
+import { checkoutLink, flutterwaveCharge, flutterwaveVerify, verifyWebhookSignature } from './lib/flutterwave';
 import { sendFcm } from './lib/fcm';
 import { httpError, json, newId, now, readJson, requireUid } from './lib/auth';
 import { ASSETS, FIATS, vEnum, vHandle, vInt, vNum, vOptStr, vStr, vStrList } from './lib/validate';
@@ -102,6 +102,22 @@ async function ensureAiColumn(db: D1Database): Promise<void> {
     // Column already exists.
   }
   aiColEnsured = true;
+}
+
+// coin_purchases maps each Flutterwave tx_ref to its buyer + package so the
+// webhook/callback settler never has to parse underscores out of tx_refs
+// (package ids like "coins_500" contain them). Same deploy-safety pattern.
+let coinPurchasesEnsured = false;
+async function ensureCoinPurchasesTable(db: D1Database): Promise<void> {
+  if (coinPurchasesEnsured) return;
+  await db.prepare(`CREATE TABLE IF NOT EXISTS coin_purchases (
+    tx_ref TEXT PRIMARY KEY,
+    uid TEXT NOT NULL,
+    package_id TEXT NOT NULL,
+    amount_usd REAL NOT NULL,
+    created_at INTEGER NOT NULL
+  )`).run();
+  coinPurchasesEnsured = true;
 }
 
 // Admin gate: x-admin-key header. Used by the agent-run review console.
@@ -278,6 +294,20 @@ export default {
       // ---------- health (only unauthenticated endpoint) ----------
       if (path === '/api/health' && method === 'GET') return json({ ok: true, ts: now() });
 
+      // ---------- public avatar serving (no signing - avatars are public) ----------
+      {
+        const m = path.match(/^\/avatars\/(.+)$/);
+        if (m && method === 'GET') {
+          const key = 'avatars/' + decodeURIComponent(m[1]).replace(/^avatars\//, '');
+          const obj = await env.MEDIA.get(key);
+          if (!obj) throw httpError(404, 'not_found');
+          const headers = new Headers();
+          obj.writeHttpMetadata(headers);
+          headers.set('cache-control', 'public, max-age=86400');
+          return new Response(obj.body, { headers });
+        }
+      }
+
       // ---------- signed media serving ----------
       {
         const m = path.match(/^\/media\/(.+)$/);
@@ -341,18 +371,26 @@ export default {
         } else {
           // Existing user: update profile fields in place. (A bare INSERT..ON CONFLICT(uid)
           // would still trip the handle UNIQUE index when the proposed handle already exists.)
+          // avatar_url is only overwritten when a non-empty value is sent — the app
+          // calls sync on every launch without an avatar, which used to wipe it.
           await env.DB.prepare(
-            `UPDATE users SET display_name = ?, avatar_url = ?,
+            `UPDATE users SET display_name = ?,
+               avatar_url = CASE WHEN ? != '' THEN ? ELSE avatar_url END,
                country = CASE WHEN ? != '' THEN ? ELSE country END,
                email = COALESCE(?, email), username = COALESCE(?, username), updated_at = ? WHERE uid = ?`
           )
-            .bind(displayName, avatarUrl, country, country, email || null, username || null, t, uid)
+            .bind(displayName, avatarUrl, avatarUrl, country, country, email || null, username || null, t, uid)
             .run();
         }
         if (isNew) {
-          // Every new user auto-follows the official @nova account.
-          const official = await env.DB.prepare('SELECT uid FROM users WHERE is_official = 1 LIMIT 1').first<{ uid: string }>();
-          if (official) {
+          // Every new user auto-follows the official @nova company account
+          // (idempotent INSERT OR IGNORE). Prefer the canonical @nova uid;
+          // fall back to the is_official flag if that row is ever reseeded.
+          const NOVA_UID = 'wkx3Pte47Aa66fSVyPUE4raZcii2';
+          const novaRow = await env.DB.prepare('SELECT uid FROM users WHERE uid = ?').bind(NOVA_UID).first<{ uid: string }>();
+          const official = novaRow
+            ?? await env.DB.prepare('SELECT uid FROM users WHERE is_official = 1 LIMIT 1').first<{ uid: string }>();
+          if (official && official.uid !== uid) {
             await env.DB.prepare('INSERT OR IGNORE INTO follows (follower_uid, followee_uid, created_at) VALUES (?, ?, ?)')
               .bind(uid, official.uid, t)
               .run();
@@ -565,13 +603,23 @@ export default {
         if (!pkg) throw httpError(400, 'unknown_package');
         const email = vStr(b.email, 'email', 3, 120);
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw httpError(400, 'email_invalid');
+        await ensureCoinPurchasesTable(env.DB);
+        // tx_ref embeds uid/package for humans; the MACHINE source of truth is
+        // coin_purchases (package ids contain underscores, so tx_ref is never parsed).
+        const txRef = `nova_coins_${uid}_${pkg.id}_${newId()}`;
+        await env.DB.prepare(
+          'INSERT OR IGNORE INTO coin_purchases (tx_ref, uid, package_id, amount_usd, created_at) VALUES (?, ?, ?, ?, ?)',
+        ).bind(txRef, uid, pkg.id, pkg.usd, now()).run();
         const data = await flutterwaveCharge(env.FLUTTERWAVE_SECRET_KEY, {
           amount: pkg.usd,
           currency: 'USD',
           email,
-          tx_ref: `nova_coins_${uid}_${pkg.id}_${newId()}`,
+          tx_ref: txRef,
+          redirectUrl: `${new URL(request.url).origin}/api/payments/callback`,
         });
-        return json({ flutterwave: data, package: pkg });
+        // flutterwaveCharge throws checkout_unavailable unless the response
+        // carries a real hosted-checkout link — no silent null-link 200s.
+        return json({ checkoutUrl: checkoutLink(data), txRef, flutterwave: data, package: pkg });
       }
       if (path === '/api/coins/ledger' && method === 'GET') {
         const uid = await guard(request, env);
@@ -734,8 +782,9 @@ export default {
           currency: 'USD',
           email: `${uid}@nova.user`,
           name: `Promotion ${pkg}`,
+          redirectUrl: `${new URL(request.url).origin}/api/payments/callback`,
         });
-        return json({ txRef, checkoutUrl: charge.checkoutUrl, package: pkg, amount: spec.amount });
+        return json({ txRef, checkoutUrl: checkoutLink(charge), package: pkg, amount: spec.amount });
       }
       // Called by the payments webhook after successful charge.
       // (Invoked internally; the webhook handler calls activatePromotion.)
@@ -764,13 +813,15 @@ export default {
         const b = await readJson(request) as Record<string, unknown>;
         const email = vStr(b.email, 'email', 3, 120);
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw httpError(400, 'email_invalid');
+        const txRef = `nova_verify_${uid}_${newId()}`;
         const data = await flutterwaveCharge(env.FLUTTERWAVE_SECRET_KEY, {
           amount: VERIFY_PRICE_USD,
           currency: 'USD',
           email,
-          tx_ref: `nova_verify_${uid}_${newId()}`,
+          tx_ref: txRef,
+          redirectUrl: `${new URL(request.url).origin}/api/payments/callback`,
         });
-        return json({ flutterwave: data, price_usd: VERIFY_PRICE_USD, days: VERIFY_DAYS });
+        return json({ checkoutUrl: checkoutLink(data), txRef, flutterwave: data, price_usd: VERIFY_PRICE_USD, days: VERIFY_DAYS });
       }
 
       // ---------- hashtags ----------
@@ -1519,6 +1570,35 @@ export default {
         return json({ key, playbackUrl: await signMediaKey(env.MEDIA_SIGNING_SECRET, key) }, 201);
       }
 
+      // ---------- avatar upload (R2; authed; served publicly via /avatars/) ----------
+      // One call does the whole chain: validates the image, stores it under
+      // avatars/<uid>/, and sets users.avatar_url to a PERMANENT public URL
+      // (the /api/uploads signed URL expires after 15 minutes, so it must
+      // never be stored as an avatar).
+      if (path === '/api/users/avatar' && method === 'POST') {
+        const uid = await guard(request, env, 30);
+        const form = await request.formData();
+        const file = form.get('file');
+        if (!(file instanceof File)) throw httpError(400, 'file_required');
+        const extByType: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+        const ct = (file.type || '').toLowerCase();
+        const ext = extByType[ct];
+        if (!ext) throw httpError(415, 'avatar_must_be_image');
+        if (file.size > 10 * 1024 * 1024) throw httpError(413, 'file_too_large');
+        if (file.size === 0) throw httpError(400, 'file_empty');
+        const rel = `${uid}/${newId()}.${ext}`;
+        const key = `avatars/${rel}`;
+        await env.MEDIA.put(key, file.stream(), {
+          httpMetadata: { contentType: ct, cacheControl: 'public, max-age=31536000' },
+        });
+        const t = now();
+        const avatarUrl = `${new URL(request.url).origin}/avatars/${encodeURIComponent(rel)}`;
+        await env.DB.prepare('UPDATE users SET avatar_url = ?, updated_at = ? WHERE uid = ?')
+          .bind(avatarUrl, t, uid)
+          .run();
+        return json({ avatarUrl, key }, 201);
+      }
+
       // ---------- Flutterwave (server-side only) ----------
       if (path === '/api/payments/charge' && method === 'POST') {
         const uid = await guard(request, env, 20);
@@ -1528,11 +1608,13 @@ export default {
         const currency = vEnum((b.currency as string) || 'NGN', ['NGN', 'USD', 'GHS', 'KES'] as const, 'currency');
         const email = vStr(b.email, 'email', 3, 120);
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw httpError(400, 'email_invalid');
+        const txRef = `nova_${uid.slice(0, 8)}_${newId()}`;
         const data = await flutterwaveCharge(env.FLUTTERWAVE_SECRET_KEY, {
           amount, currency, email,
-          tx_ref: `nova_${uid.slice(0, 8)}_${newId()}`,
+          tx_ref: txRef,
+          redirectUrl: `${new URL(request.url).origin}/api/payments/callback`,
         });
-        return json({ flutterwave: data });
+        return json({ checkoutUrl: checkoutLink(data), txRef, flutterwave: data });
       }
       if (path === '/api/payments/webhook' && method === 'POST') {
         await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 120, 60);
@@ -1557,6 +1639,38 @@ export default {
           }
         }
         return json({ received: true });
+      }
+      // Checkout redirect fallback: Flutterwave sends the payer here with
+      // ?status=&tx_ref=&transaction_id=. We re-verify server-side and settle,
+      // so coins credit even if the webhook secret was never configured.
+      // Public by design (the payer's browser lands here); rate-limited.
+      if (path === '/api/payments/callback' && method === 'GET') {
+        await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 60, 60);
+        const txRef = url.searchParams.get('tx_ref') || '';
+        const txId = url.searchParams.get('transaction_id') || '';
+        const status = url.searchParams.get('status') || '';
+        let settled = false;
+        if (status === 'successful' && txRef && txId) {
+          try {
+            const v = await flutterwaveVerify(env.FLUTTERWAVE_SECRET_KEY, txId);
+            const vd = ((v as Record<string, unknown>).data || {}) as Record<string, unknown>;
+            if (`${vd.status}` === 'successful' && `${vd.tx_ref}` === txRef) {
+              await settleFlutterwaveTx(env, txRef, Number(vd.amount || 0), `${vd.currency || ''}`);
+              settled = true;
+            }
+          } catch (e) {
+            console.error('callback verify failed');
+          }
+        }
+        const msg = settled
+          ? 'Payment confirmed. Your Nova Coins are on the way — you can return to the Nova app.'
+          : 'We could not confirm that payment. If you were charged, contact Nova support from the app.';
+        return new Response(
+          `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nova payment</title></head>` +
+          `<body style="background:#0b0b0f;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">` +
+          `<p style="max-width:320px;text-align:center;line-height:1.6">${msg}</p></body></html>`,
+          { headers: { 'content-type': 'text/html; charset=utf-8' } },
+        );
       }
 
       // ---------- push ----------
@@ -2180,12 +2294,17 @@ export default {
 async function settleFlutterwaveTx(env: Env, txRef: string, amount: number, currency: string) {
   const t = now();
   if (txRef.startsWith('nova_coins_')) {
-    // nova_coins_<fullUid>_<packageId>_<uuid> (Firebase uids never contain '_')
-    const parts = txRef.split('_');
-    const uid = parts[2];
-    const pkgId = parts[3];
-    const pkg = COIN_PACKAGES.find((p) => p.id === pkgId);
-    if (!pkg || currency !== 'USD' || Math.abs(amount - pkg.usd) > 0.001) {
+    // Source of truth is coin_purchases (written at buy time). tx_ref is
+    // NEVER parsed: package ids like "coins_500" contain underscores.
+    const purchase = await env.DB.prepare('SELECT uid, package_id, amount_usd FROM coin_purchases WHERE tx_ref = ?')
+      .bind(txRef).first<{ uid: string; package_id: string; amount_usd: number }>();
+    if (!purchase) {
+      console.error('coin settlement: unknown tx_ref');
+      return;
+    }
+    const uid = purchase.uid;
+    const pkg = COIN_PACKAGES.find((p) => p.id === purchase.package_id);
+    if (!pkg || currency !== 'USD' || Math.abs(amount - pkg.usd) > 0.001 || Math.abs(purchase.amount_usd - pkg.usd) > 0.001) {
       console.error('coin settlement mismatch');
       return;
     }
