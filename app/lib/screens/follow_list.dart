@@ -162,10 +162,11 @@ class _FollowListScreenState extends State<FollowListScreen> {
                                                 borderRadius:
                                                     BorderRadius.circular(6)),
                                           ),
-                                          onPressed: () async {
-                                            await state
-                                                .toggleFollow(u.uid);
-                                            if (mounted) setState(() {});
+                                          onPressed: () {
+                                            // Optimistic: toggleFollow updates
+                                            // followingUids + notifyListeners()
+                                            // synchronously; no await needed.
+                                            state.toggleFollow(u.uid);
                                           },
                                           child: Text('Following',
                                               style: TextStyle(
@@ -183,10 +184,11 @@ class _FollowListScreenState extends State<FollowListScreen> {
                                                 borderRadius:
                                                     BorderRadius.circular(6)),
                                           ),
-                                          onPressed: () async {
-                                            await state
-                                                .toggleFollow(u.uid);
-                                            if (mounted) setState(() {});
+                                          onPressed: () {
+                                            // Optimistic: toggleFollow updates
+                                            // followingUids + notifyListeners()
+                                            // synchronously; no await needed.
+                                            state.toggleFollow(u.uid);
                                           },
                                           child: const Text('Follow',
                                               style: TextStyle(
