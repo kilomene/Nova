@@ -36,6 +36,13 @@ class CoinService extends ChangeNotifier {
 
   /// Start a Flutterwave checkout for a coin package.
   /// Returns true if a checkout page was opened.
+  ///
+  /// The checkout link is extracted defensively: the backend currently
+  /// returns { flutterwave: <raw Flutterwave charge response>, package },
+  /// and the raw response nests the link at flutterwave.data.link — but
+  /// several other shapes (link / checkoutUrl / checkout_url at the top
+  /// level, or directly under flutterwave) are accepted too, so a backend
+  /// response-format change doesn't surface as "checkout unavailable".
   Future<bool> buyPackage(ApiClient api, CoinPackage pkg, String email) async {
     if (api.isDemo) {
       // Labeled demo simulation: no real payment.
@@ -45,8 +52,12 @@ class CoinService extends ChangeNotifier {
       notifyListeners();
       return true;
     }
-    final r = await api.post('/api/coins/buy', {'packageId': pkg.id, 'email': email});
-    final link = ((r['flutterwave'] as Map?)?['data'] as Map?)?['link'] as String?;
+    final cleanEmail = email.trim();
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(cleanEmail)) {
+      throw ApiException(400, 'invalid_email');
+    }
+    final r = await api.post('/api/coins/buy', {'packageId': pkg.id, 'email': cleanEmail});
+    final link = _extractCheckoutLink(r);
     if (link == null) throw ApiException(502, 'checkout_unavailable');
     final uri = Uri.parse(link);
     if (await canLaunchUrl(uri)) {
@@ -54,6 +65,30 @@ class CoinService extends ChangeNotifier {
       return true;
     }
     throw ApiException(502, 'checkout_unavailable');
+  }
+
+  /// Hunt for a checkout URL across the known backend response shapes.
+  static String? _extractCheckoutLink(Map<String, dynamic> r) {
+    const keys = ['link', 'checkoutUrl', 'checkout_url', 'paymentLink', 'payment_link', 'url'];
+    final fw = r['flutterwave'];
+    if (fw is Map) {
+      final data = fw['data'];
+      if (data is Map) {
+        for (final k in keys) {
+          final v = data[k];
+          if (v is String && v.startsWith('http')) return v;
+        }
+      }
+      for (final k in keys) {
+        final v = fw[k];
+        if (v is String && v.startsWith('http')) return v;
+      }
+    }
+    for (final k in keys) {
+      final v = r[k];
+      if (v is String && v.startsWith('http')) return v;
+    }
+    return null;
   }
 
   /// Send a gift: deducts Nova Coin, credits the creator. Works in demo
