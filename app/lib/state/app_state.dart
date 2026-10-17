@@ -120,7 +120,7 @@ class AppState extends ChangeNotifier {
       try {
         final r = await api.post('/api/users/sync', {
           'handle': 'user_${auth.uid.substring(0, 8)}',
-          'displayName': auth.email ?? '',
+          'displayName': '',
           'email': auth.email ?? '',
           'deviceId': deviceId,
         });
