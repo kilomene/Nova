@@ -46,7 +46,7 @@ class _MainShellState extends State<MainShell> {
       body: IndexedStack(index: _index, children: pages),
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: Colors.black,
-        selectedItemColor: const Color(0xFFFFC107),
+        selectedItemColor: Theme.of(context).colorScheme.primary,
         unselectedItemColor: Colors.white54,
         type: BottomNavigationBarType.fixed,
         currentIndex: _index,
@@ -62,7 +62,7 @@ class _MainShellState extends State<MainShell> {
             activeIcon: const NovaIcon.shop(active: true, size: 26),
             label: 'Shop',
           ),
-          const BottomNavigationBarItem(
+          BottomNavigationBarItem(
             icon: NovaCreateButton(size: 44),
             label: '',
           ),
