@@ -5,15 +5,10 @@ import '../models.dart';
 import '../state/app_state.dart';
 import '../utils/format.dart';
 import 'hashtag.dart';
-import 'market.dart';
 import 'profile.dart';
 
 /// TikTok-style search with category tabs:
-/// Top | Videos | Users | Shop | LIVE | Photos | Sounds | Hashtags
-///
-/// Client-side filtering of the loaded feed/listings (the backend has no
-/// /api/search yet — a server-side `GET /api/search?q=..&type=..` would be
-/// needed to search the full corpus instead of the loaded page).
+/// Ask | Top | Users | Videos | Shop | Sounds | LIVE | Places | Photos | Hashtags
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
 
@@ -28,13 +23,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
   String _activeFilter = 'Latest';
 
   static const _tabLabels = [
-    'Top', 'Videos', 'Users', 'Shop', 'LIVE', 'Photos', 'Sounds', 'Hashtags',
+    'Ask', 'Top', 'Users', 'Videos', 'Shop', 'Sounds', 'LIVE', 'Places', 'Photos', 'Hashtags',
   ];
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: _tabLabels.length, vsync: this, initialIndex: 0);
+    _tabs = TabController(length: _tabLabels.length, vsync: this, initialIndex: 1);
   }
 
   @override
@@ -53,12 +48,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
       return;
     }
     setState(() => _query = q);
-    // Keep the Shop tab fresh: fetch marketplace listings for the query.
-    if (q.isNotEmpty) {
-      try {
-        context.read<AppState>().loadListings(query: q);
-      } catch (_) {}
-    }
   }
 
   List<NovaVideo> _matchedVideos(AppState state) {
@@ -73,7 +62,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
         .toList();
   }
 
-  /// Derive unique users from matched videos (client-side until backend search exists).
   List<NovaVideo> _matchedUsers(List<NovaVideo> videos) {
     final seen = <String>{};
     final out = <NovaVideo>[];
@@ -93,7 +81,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
       body: SafeArea(
         child: Column(
           children: [
-            // ---- Search bar: back | field | X | ... ----
             Padding(
               padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
               child: Row(
@@ -138,11 +125,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
                 ],
               ),
             ),
-            // ---- Scrollable tabs ----
             TabBar(
               controller: _tabs,
               isScrollable: true,
-              indicatorColor: const Color(0xFFFFC107),
+              indicatorColor: Theme.of(context).colorScheme.primary,
               indicatorWeight: 3,
               labelColor: Colors.white,
               unselectedLabelColor: Colors.white54,
@@ -150,20 +136,21 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
               tabs: _tabLabels.map((t) => Tab(text: t)).toList(),
             ),
             const Divider(height: 1, color: Color(0xFF222222)),
-            // ---- Tab content ----
             Expanded(
               child: _query.isEmpty
                   ? _buildEmptyState(state)
                   : TabBarView(
                       controller: _tabs,
                       children: [
+                        _buildAskTab(),
                         _buildTopTab(state, videos),
-                        _buildVideosTab(videos),
                         _buildUsersTab(state, videos),
-                        _buildShopTab(state),
-                        _buildLiveTab(state),
-                        _buildPhotosTab(videos),
+                        _buildVideosTab(videos),
+                        _buildShopTab(),
                         _buildSoundsTab(videos),
+                        _buildLiveTab(state),
+                        _buildPlacesTab(),
+                        _buildPhotosTab(videos),
                         _buildHashtagsTab(state),
                       ],
                     ),
@@ -174,7 +161,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
     );
   }
 
-  // ---------- Empty state: trending hashtags ----------
   Widget _buildEmptyState(AppState state) {
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: state.trendingHashtags(),
@@ -196,8 +182,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
                 contentPadding: EdgeInsets.zero,
                 leading: Container(
                   width: 44, height: 44,
-                  decoration: BoxDecoration(color: const Color(0xFF1a1a1a), borderRadius: BorderRadius.circular(8)),
-                  child: const Center(child: Text('#', style: TextStyle(color: Color(0xFFFFC107), fontSize: 20, fontWeight: FontWeight.bold))),
+                  decoration: BoxDecoration(color: Color(0xFF1a1a1a), borderRadius: BorderRadius.circular(8)),
+                  child: Center(child: Text('#', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 20, fontWeight: FontWeight.bold))),
                 ),
                 title: Text('#$tag', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                 subtitle: Text('${t['uses'] ?? 0} videos', style: const TextStyle(color: Colors.white38, fontSize: 12)),
@@ -210,59 +196,25 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
     );
   }
 
-  // ---------- Shop tab: marketplace listings matching the query ----------
-  Widget _buildShopTab(AppState state) {
-    final q = _query.toLowerCase();
-    final items = state.listings
-        .where((l) =>
-            l.title.toLowerCase().contains(q) ||
-            l.description.toLowerCase().contains(q) ||
-            l.category.toLowerCase().contains(q) ||
-            l.handle.toLowerCase().contains(q))
-        .toList();
-    if (items.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Text('No products match your search.',
-              style: TextStyle(color: Colors.white38), textAlign: TextAlign.center),
+  Widget _buildAskTab() {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.auto_awesome, color: Theme.of(context).colorScheme.primary, size: 48),
+            const SizedBox(height: 16),
+            Text('Ask about "$_query"', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            const Text('AI-powered answers are coming soon.', style: TextStyle(color: Colors.white38)),
+          ],
         ),
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: items.length,
-      separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFF1a1a1a)),
-      itemBuilder: (context, i) {
-        final l = items[i];
-        return ListTile(
-          leading: Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-                color: const Color(0xFF1a1a1a), borderRadius: BorderRadius.circular(8)),
-            child: const Icon(Icons.shopping_bag_outlined, color: Color(0xFFFFC107)),
-          ),
-          title: Text(l.title,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis),
-          subtitle: Text('@${l.handle} · ${l.category}',
-              style: const TextStyle(color: Colors.white54, fontSize: 12)),
-          trailing: Text('\$${l.priceUsd.toStringAsFixed(l.priceUsd.truncateToDouble() == l.priceUsd ? 0 : 2)}',
-              style: const TextStyle(
-                  color: Color(0xFFFFC107), fontWeight: FontWeight.bold, fontSize: 15)),
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => ProductDetailScreen(listing: l),
-          )),
-        );
-      },
+      ),
     );
   }
 
-  // ---------- Top tab: filter chips + 2-col video grid ----------
   Widget _buildTopTab(AppState state, List<NovaVideo> videos) {
-    // Query-relevant filter chips (derived from query words + defaults).
     final chips = ['Latest', ..._query.split(' ').where((w) => w.length > 2).take(3), 'Sound', 'Price'];
     return Column(
       children: [
@@ -350,7 +302,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
     );
   }
 
-  // ---------- Users tab ----------
   Widget _buildUsersTab(AppState state, List<NovaVideo> videos) {
     final users = _matchedUsers(videos);
     if (users.isEmpty) return const Center(child: Text('No users found', style: TextStyle(color: Colors.white38)));
@@ -369,27 +320,22 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
             style: const TextStyle(color: Colors.white54, fontSize: 12),
           ),
           isThreeLine: true,
-          trailing: _followButton(state, u.uid, following),
+          trailing: ElevatedButton(
+            onPressed: () => state.toggleFollow(u.uid),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: following ? Color(0xFF1c1c1c) : Theme.of(context).colorScheme.primary,
+              foregroundColor: following ? Colors.white : Colors.black,
+              minimumSize: const Size(90, 34),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            child: Text(following ? 'Following' : 'Follow', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          ),
           onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProfileScreen(handle: u.handle))),
         );
       },
     );
   }
 
-  Widget _followButton(AppState state, String uid, bool following) {
-    return ElevatedButton(
-      onPressed: () => state.toggleFollow(uid),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: following ? const Color(0xFF1c1c1c) : const Color(0xFFFFC107),
-        foregroundColor: following ? Colors.white : Colors.black,
-        minimumSize: const Size(90, 34),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-      ),
-      child: Text(following ? 'Following' : 'Follow', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-    );
-  }
-
-  // ---------- Videos tab: 3-col grid ----------
   Widget _buildVideosTab(List<NovaVideo> videos) {
     if (videos.isEmpty) return const Center(child: Text('No videos found', style: TextStyle(color: Colors.white38)));
     return GridView.builder(
@@ -430,14 +376,15 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
     );
   }
 
-  // ---------- Photos tab: photo surface = video thumbnails ----------
-  // v1 has no standalone photo posts; thumbnails of matching videos are the
-  // closest photo-type surface until the backend adds photo content.
-  Widget _buildPhotosTab(List<NovaVideo> videos) {
-    return _buildVideosTab(videos);
+  Widget _buildShopTab() {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(32),
+        child: Text('Shop results for your search will appear here.', style: TextStyle(color: Colors.white38), textAlign: TextAlign.center),
+      ),
+    );
   }
 
-  // ---------- Sounds tab ----------
   Widget _buildSoundsTab(List<NovaVideo> videos) {
     final seen = <String>{};
     final sounds = <NovaVideo>[];
@@ -458,12 +405,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
             decoration: BoxDecoration(color: const Color(0xFF1a1a1a), borderRadius: BorderRadius.circular(8)),
             child: const Icon(Icons.play_arrow, color: Colors.white),
           ),
-          title: Text(s.soundLabel, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text('Contains music from: ${s.handle}\n0:30 · $useCount videos', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          title: Text(s.soundLabel, style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text('Contains music from: ${s.handle}\n0:30 · $useCount videos', style: TextStyle(color: Colors.white54, fontSize: 12)),
           isThreeLine: true,
           trailing: Container(
             width: 40, height: 40,
-            decoration: BoxDecoration(color: const Color(0xFFFFC107), borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, borderRadius: BorderRadius.circular(8)),
             child: const Icon(Icons.videocam, color: Colors.black, size: 20),
           ),
           onTap: () {},
@@ -472,7 +419,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
     );
   }
 
-  // ---------- LIVE tab ----------
   Widget _buildLiveTab(AppState state) {
     final q = _query.toLowerCase();
     final lives = state.liveSessions
@@ -554,7 +500,19 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
     );
   }
 
-  // ---------- Hashtags tab ----------
+  Widget _buildPlacesTab() {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(32),
+        child: Text('Places near your search will appear here.', style: TextStyle(color: Colors.white38), textAlign: TextAlign.center),
+      ),
+    );
+  }
+
+  Widget _buildPhotosTab(List<NovaVideo> videos) {
+    return _buildVideosTab(videos);
+  }
+
   Widget _buildHashtagsTab(AppState state) {
     final q = _query.toLowerCase().replaceAll('#', '');
     return FutureBuilder<List<Map<String, dynamic>>>(
@@ -572,8 +530,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> with SingleTickerProvid
             return ListTile(
               leading: Container(
                 width: 44, height: 44,
-                decoration: BoxDecoration(color: const Color(0xFF1a1a1a), borderRadius: BorderRadius.circular(8)),
-                child: const Center(child: Text('#', style: TextStyle(color: Color(0xFFFFC107), fontSize: 20, fontWeight: FontWeight.bold))),
+                decoration: BoxDecoration(color: Color(0xFF1a1a1a), borderRadius: BorderRadius.circular(8)),
+                child: Center(child: Text('#', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 20, fontWeight: FontWeight.bold))),
               ),
               title: Text('#$tag', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
               subtitle: Text('${tags[i]['uses'] ?? 0} videos', style: const TextStyle(color: Colors.white54, fontSize: 12)),
