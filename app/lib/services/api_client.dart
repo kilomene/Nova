@@ -11,7 +11,8 @@ class ApiException implements Exception {
   @override
   String toString() => 'ApiException($status, $code)';
 
-  /// Human-readable message for UI display. Never includes raw payloads.
+  /// Human-readable message for UI display. Never includes raw payloads
+  /// or raw exception text — safe to show directly in snackbars.
   String get message {
     switch (code) {
       case 'kyc_required':
@@ -40,8 +41,27 @@ class ApiException implements Exception {
         return 'Not enough creator earnings for that payout.';
       case 'auth_not_configured':
         return 'Cloud backend not configured (demo mode).';
+      case 'missing_bearer_token':
+      case 'unauthorized':
+      case 'invalid_token':
+      case 'token_expired':
+        return 'Please log in to continue.';
+      case 'network_error':
+        return 'No connection. Check your internet and try again.';
+      case 'demo_mode':
+        return 'Not available in demo mode.';
+      case 'account_not_found':
+        return 'No account found with that username or email.';
+      case 'invalid_code':
+        return 'That code is incorrect. Try again.';
+      case 'invalid_email':
+        return 'Enter a valid email address.';
+      case 'weak_password':
+        return 'Use a password of at least 6 characters.';
+      case 'checkout_unavailable':
+        return 'Checkout is unavailable right now. Try again later.';
       default:
-        return 'Something went wrong ($code).';
+        return 'Something went wrong. Please try again.';
     }
   }
 }
@@ -50,9 +70,15 @@ typedef TokenProvider = Future<String?> Function();
 
 /// Thin HTTP wrapper. Adds the Firebase bearer token; throws ApiException
 /// on 4xx/5xx with the server's stable error code (never raw internals).
+///
+/// Any 401 response fires [onUnauthorized] (the app routes to the login
+/// gate) before the ApiException is thrown.
 class ApiClient {
   final String baseUrl;
   final TokenProvider tokenProvider;
+
+  /// Fired on any 401 response. Set once at startup (see main.dart).
+  void Function()? onUnauthorized;
 
   ApiClient({required this.baseUrl, required this.tokenProvider});
 
@@ -127,6 +153,12 @@ class ApiClient {
     }
     if (resp.statusCode >= 400) {
       final code = (decoded is Map && decoded['error'] is String) ? decoded['error'] as String : 'request_failed';
+      if (resp.statusCode == 401) {
+        // Session expired / missing: route to the login gate first.
+        try {
+          onUnauthorized?.call();
+        } catch (_) {}
+      }
       throw ApiException(resp.statusCode, code);
     }
     return decoded is Map<String, dynamic> ? decoded : {'data': decoded};
