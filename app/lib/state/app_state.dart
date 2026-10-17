@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -56,6 +56,33 @@ class AppState extends ChangeNotifier {
   String deviceId = '';
   bool vpnDetected = false;
   bool networkBlocked = false;
+
+  // Theme preference: 'system' (default) | 'light' | 'dark'.
+  String themePreference = 'system';
+
+  ThemeMode get themeMode {
+    switch (themePreference) {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      default:
+        return ThemeMode.system;
+    }
+  }
+
+  Future<void> loadThemePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    themePreference = prefs.getString('nova_theme') ?? 'system';
+    notifyListeners();
+  }
+
+  Future<void> setThemePreference(String value) async {
+    themePreference = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('nova_theme', value);
+    notifyListeners();
+  }
 
   // Moderation state for the current user.
   List<StrikeRecord> strikes = [];
@@ -117,10 +144,28 @@ class AppState extends ChangeNotifier {
       me = NovaUser(uid: auth.uid, handle: 'you', displayName: 'You');
       _seedDemo();
     } else {
+      // Preserve the existing profile row: /api/users/sync overwrites
+      // display_name/avatar_url with whatever is sent, so read the current
+      // row first and echo its values back. Without this, every app launch
+      // wipes the user's display name AND profile photo in D1 (this is why
+      // @nova's avatar kept disappearing from the profile screen even
+      // though avatar_url was set in the database).
+      String keepName = '';
+      String keepAvatar = '';
+      try {
+        final existing = await api.get('/api/users/${auth.uid}');
+        final eu = (existing['user'] as Map?)?.cast<String, dynamic>();
+        keepName = '${eu?['display_name'] ?? ''}';
+        keepAvatar = '${eu?['avatar_url'] ?? ''}';
+      } catch (_) {
+        // New user (404): fall through with empty values; the sync call
+        // below creates the row.
+      }
       try {
         final r = await api.post('/api/users/sync', {
           'handle': 'user_${auth.uid.substring(0, 8)}',
-          'displayName': '',
+          'displayName': keepName,
+          'avatarUrl': keepAvatar,
           'email': auth.email ?? '',
           'deviceId': deviceId,
         });
@@ -157,15 +202,19 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Update the current user's profile (display name, handle, bio).
+  /// Update the current user's profile (display name, handle, bio, avatar).
   /// Uses /api/users/sync to persist; updates local state immediately.
+  /// [avatarUrl] is optional: when null the existing photo is kept (and the
+  /// preserved value is echoed back so the sync never wipes it server-side).
   Future<void> updateProfile({
     required String displayName,
     required String handle,
     required String bio,
+    String? avatarUrl,
   }) async {
     final current = me;
     if (current == null) throw Exception('Not signed in');
+    final nextAvatar = avatarUrl ?? current.avatarUrl;
     // Optimistic local update.
     me = NovaUser(
       uid: current.uid,
@@ -173,7 +222,7 @@ class AppState extends ChangeNotifier {
       username: current.username,
       displayName: displayName,
       bio: bio,
-      avatarUrl: current.avatarUrl,
+      avatarUrl: nextAvatar,
       kycStatus: current.kycStatus,
       status: current.status,
       isBot: current.isBot,
@@ -189,6 +238,7 @@ class AppState extends ChangeNotifier {
         await api.post('/api/users/sync', {
           'handle': me!.handle,
           'displayName': me!.displayName,
+          'avatarUrl': nextAvatar,
           'bio': me!.bio,
           'email': auth.email ?? '',
           'deviceId': deviceId,
@@ -197,6 +247,30 @@ class AppState extends ChangeNotifier {
         // Local update stands; sync will retry next init.
       }
     }
+  }
+
+  /// Upload a new profile photo: picks a multipart upload to /api/uploads,
+  /// then persists the returned URL on the user record via updateProfile.
+  /// Returns the saved avatar URL. The UI refreshes through notifyListeners.
+  ///
+  /// Backend note: /api/uploads currently returns a short-lived signed
+  /// playbackUrl. A dedicated avatar endpoint returning a stable public URL
+  /// (e.g. POST /api/uploads/avatar → { avatarUrl }) is needed for a
+  /// permanent profile photo; until then the returned URL is used as-is.
+  Future<String> uploadAvatar(String filePath) async {
+    final current = me;
+    if (current == null) throw Exception('Not signed in');
+    if (isDemo) throw ApiException(400, 'demo_mode');
+    final up = await api.upload('/api/uploads', filePath);
+    final url = '${up['playbackUrl'] ?? up['avatarUrl'] ?? up['url'] ?? ''}';
+    if (url.isEmpty) throw ApiException(502, 'upload_failed');
+    await updateProfile(
+      displayName: current.displayName,
+      handle: current.handle,
+      bio: current.bio,
+      avatarUrl: url,
+    );
+    return url;
   }
 
   void _onSyncEvent(Map<String, dynamic> e) {
@@ -403,6 +477,39 @@ class AppState extends ChangeNotifier {
         await api.post('/api/users/$targetUid/follow');
       }
     } catch (_) {}
+  }
+
+  /// Users following [uidOrHandle].
+  ///
+  /// Backend dependency: the server does not yet expose a followers list
+  /// endpoint. This calls the conventional REST routes
+  /// GET /api/users/:id/followers and GET /api/users/:id/following and
+  /// returns [] (with the error swallowed) until the backend adds them.
+  Future<List<NovaUser>> fetchFollowers(String uidOrHandle) async {
+    if (isDemo) return [];
+    try {
+      final id = Uri.encodeComponent(uidOrHandle);
+      final r = await api.get('/api/users/$id/followers');
+      return ((r['users'] as List?) ?? [])
+          .map((e) => NovaUser.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Users [uidOrHandle] follows. Same backend dependency as [fetchFollowers].
+  Future<List<NovaUser>> fetchFollowing(String uidOrHandle) async {
+    if (isDemo) return [];
+    try {
+      final id = Uri.encodeComponent(uidOrHandle);
+      final r = await api.get('/api/users/$id/following');
+      return ((r['users'] as List?) ?? [])
+          .map((e) => NovaUser.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<NovaUser?> fetchUser(String uidOrHandle) async {
