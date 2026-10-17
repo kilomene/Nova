@@ -63,7 +63,20 @@ class NovaApp extends StatelessWidget {
       title: 'Nova',
       debugShowCheckedModeBanner: false,
       navigatorKey: navigatorKey,
-      theme: ThemeData.dark(useMaterial3: true).copyWith(
+      theme: ThemeData.light(useMaterial3: true).copyWith(
+        scaffoldBackgroundColor: Colors.white,
+        colorScheme: const ColorScheme.light(
+          primary: Color(0xFFE6A800),
+          secondary: Color(0xFF20D5EC),
+          surface: Color(0xFFF5F5F5),
+        ),
+        appBarTheme: const AppBarTheme(backgroundColor: Colors.white, foregroundColor: Colors.black87),
+        inputDecorationTheme: const InputDecorationTheme(
+          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
+          focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFE6A800))),
+        ),
+      ),
+      darkTheme: ThemeData.dark(useMaterial3: true).copyWith(
         scaffoldBackgroundColor: Colors.black,
         colorScheme: const ColorScheme.dark(
           primary: Color(0xFFFFC107),
@@ -76,6 +89,7 @@ class NovaApp extends StatelessWidget {
           focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFFFC107))),
         ),
       ),
+      themeMode: ThemeMode.system,
       home: const SplashScreen(),
     );
   }
