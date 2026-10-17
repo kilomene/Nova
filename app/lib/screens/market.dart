@@ -28,9 +28,17 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Colors.black : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white38 : Colors.black45;
+    final card = isDark ? const Color(0xFF161616) : const Color(0xFFF5F5F5);
+    final thumbBg1 = isDark ? const Color(0xFF2a2a2a) : const Color(0xFFE8E8E8);
+    final thumbBg2 = isDark ? const Color(0xFF1a1a1a) : const Color(0xFFD8D8D8);
+    final thumbIcon = isDark ? Colors.white24 : Colors.black26;
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black, title: const Text('Marketplace')),
+      backgroundColor: bg,
+      appBar: AppBar(backgroundColor: bg, title: Text('Marketplace', style: TextStyle(color: fg))),
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFFFFC107),
         foregroundColor: Colors.black,
@@ -52,13 +60,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             padding: const EdgeInsets.all(12),
             child: TextField(
               controller: _q,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: fg),
               decoration: InputDecoration(
                 hintText: 'Search products',
-                hintStyle: const TextStyle(color: Colors.white38),
-                prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                hintStyle: TextStyle(color: sub),
+                prefixIcon: Icon(Icons.search, color: sub),
                 filled: true,
-                fillColor: const Color(0xFF161616),
+                fillColor: card,
                 border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)), borderSide: BorderSide.none),
               ),
               onSubmitted: (_) => state.loadListings(query: _q.text.trim().isEmpty ? null : _q.text.trim()),
@@ -66,7 +74,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           ),
           Expanded(
             child: state.listings.isEmpty
-                ? const Center(child: Text('No products yet — list the first one.', style: TextStyle(color: Colors.white38)))
+                ? Center(child: Text('No products yet — list the first one.', style: TextStyle(color: sub)))
                 : GridView.builder(
                     padding: const EdgeInsets.all(12),
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: 0.75, crossAxisSpacing: 10, mainAxisSpacing: 10),
@@ -76,17 +84,17 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                       return GestureDetector(
                         onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProductDetailScreen(listing: l))),
                         child: Container(
-                          decoration: BoxDecoration(color: const Color(0xFF161616), borderRadius: BorderRadius.circular(12)),
+                          decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(12)),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(
                                 child: Container(
-                                  decoration: const BoxDecoration(
-                                    borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-                                    gradient: LinearGradient(colors: [Color(0xFF2a2a2a), Color(0xFF1a1a1a)]),
+                                  decoration: BoxDecoration(
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                                    gradient: LinearGradient(colors: [thumbBg1, thumbBg2]),
                                   ),
-                                  child: const Center(child: Icon(Icons.shopping_bag_outlined, color: Colors.white24, size: 44)),
+                                  child: Center(child: Icon(Icons.shopping_bag_outlined, color: thumbIcon, size: 44)),
                                 ),
                               ),
                               Padding(
@@ -94,14 +102,14 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(l.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis),
+                                    Text(l.title, style: TextStyle(color: fg, fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis),
                                     const SizedBox(height: 2),
                                     Text('\$${l.priceUsd.toStringAsFixed(2)} · ${l.asset}', style: const TextStyle(color: Color(0xFFFFC107), fontWeight: FontWeight.bold)),
                                     Row(
                                       children: [
-                                        Text('@${l.handle}', style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                                        Text('@${l.handle}', style: TextStyle(color: sub, fontSize: 11)),
                                         const SizedBox(width: 4),
-                                        Text('★ ${l.traderScore.toStringAsFixed(0)}', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                                        Text('★ ${l.traderScore.toStringAsFixed(0)}', style: TextStyle(color: sub, fontSize: 11)),
                                       ],
                                     ),
                                   ],
@@ -135,39 +143,46 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Widget build(BuildContext context) {
     final state = context.read<AppState>();
     final listing = widget.listing;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Colors.black : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white70 : Colors.black54;
+    final faint = isDark ? Colors.white38 : Colors.black38;
+    final card = isDark ? const Color(0xFF1a1a1a) : const Color(0xFFE8E8E8);
+    final thumbIcon = isDark ? Colors.white24 : Colors.black26;
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black, title: const Text('Product')),
+      backgroundColor: bg,
+      appBar: AppBar(backgroundColor: bg, title: Text('Product', style: TextStyle(color: fg))),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               height: 280,
-              color: const Color(0xFF1a1a1a),
-              child: const Center(child: Icon(Icons.shopping_bag_outlined, color: Colors.white24, size: 72)),
+              color: card,
+              child: Center(child: Icon(Icons.shopping_bag_outlined, color: thumbIcon, size: 72)),
             ),
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(listing.title, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                  Text(listing.title, style: TextStyle(color: fg, fontSize: 22, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
                   Text('\$${listing.priceUsd.toStringAsFixed(2)} · ${listing.asset}',
                       style: const TextStyle(color: Color(0xFFFFC107), fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      Text('Sold by @${listing.handle}', style: const TextStyle(color: Colors.white70)),
+                      Text('Sold by @${listing.handle}', style: TextStyle(color: sub)),
                       const SizedBox(width: 8),
-                      Text('★ ${listing.traderScore.toStringAsFixed(0)} trader score', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                      Text('★ ${listing.traderScore.toStringAsFixed(0)} trader score', style: TextStyle(color: sub, fontSize: 12)),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Text(listing.description.isEmpty ? 'No description.' : listing.description, style: const TextStyle(color: Colors.white70)),
+                  Text(listing.description.isEmpty ? 'No description.' : listing.description, style: TextStyle(color: sub)),
                   const SizedBox(height: 16),
-                  const Text('Pay with', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  Text('Pay with', style: TextStyle(color: fg, fontWeight: FontWeight.bold)),
                   RadioGroup<String>(
                     groupValue: _payMethod,
                     onChanged: (v) => setState(() => _payMethod = v!),
@@ -176,14 +191,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       children: [
                         RadioListTile<String>(
                           value: 'flutterwave',
-                          title: const Text('Card / mobile money (Flutterwave)', style: TextStyle(color: Colors.white, fontSize: 14)),
+                          title: Text('Card / mobile money (Flutterwave)', style: TextStyle(color: fg, fontSize: 14)),
                           activeColor: const Color(0xFFFFC107),
                           contentPadding: EdgeInsets.zero,
                           dense: true,
                         ),
                         RadioListTile<String>(
                           value: 'crypto',
-                          title: const Text('Crypto from Nova wallet (USDC/USDT)', style: TextStyle(color: Colors.white, fontSize: 14)),
+                          title: Text('Crypto from Nova wallet (USDC/USDT)', style: TextStyle(color: fg, fontSize: 14)),
                           activeColor: const Color(0xFFFFC107),
                           contentPadding: EdgeInsets.zero,
                           dense: true,
@@ -213,8 +228,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text('Every purchase generates an itemized receipt + shipping timeline in your order history.',
-                      style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  Text('Every purchase generates an itemized receipt + shipping timeline in your order history.',
+                      style: TextStyle(color: faint, fontSize: 12)),
                 ],
               ),
             ),
@@ -242,33 +257,38 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Colors.black : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white54 : Colors.black54;
+    final ddBg = isDark ? const Color(0xFF1a1a1a) : const Color(0xFFF5F5F5);
     return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black, title: const Text('New listing')),
+      backgroundColor: bg,
+      appBar: AppBar(backgroundColor: bg, title: Text('New listing', style: TextStyle(color: fg))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(controller: _title, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(labelText: 'Title', labelStyle: TextStyle(color: Colors.white54))),
-            TextField(controller: _desc, style: const TextStyle(color: Colors.white), maxLines: 3, decoration: const InputDecoration(labelText: 'Description', labelStyle: TextStyle(color: Colors.white54))),
+            TextField(controller: _title, style: TextStyle(color: fg), decoration: InputDecoration(labelText: 'Title', labelStyle: TextStyle(color: sub))),
+            TextField(controller: _desc, style: TextStyle(color: fg), maxLines: 3, decoration: InputDecoration(labelText: 'Description', labelStyle: TextStyle(color: sub))),
             Row(
               children: [
-                Expanded(child: TextField(controller: _price, style: const TextStyle(color: Colors.white), keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Price (USD)', labelStyle: TextStyle(color: Colors.white54)))),
+                Expanded(child: TextField(controller: _price, style: TextStyle(color: fg), keyboardType: TextInputType.number, decoration: InputDecoration(labelText: 'Price (USD)', labelStyle: TextStyle(color: sub)))),
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     initialValue: _asset,
-                    dropdownColor: const Color(0xFF1a1a1a),
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(labelText: 'Settle in', labelStyle: TextStyle(color: Colors.white54)),
+                    dropdownColor: ddBg,
+                    style: TextStyle(color: fg),
+                    decoration: InputDecoration(labelText: 'Settle in', labelStyle: TextStyle(color: sub)),
                     items: const [DropdownMenuItem(value: 'USDC', child: Text('USDC')), DropdownMenuItem(value: 'USDT', child: Text('USDT'))],
                     onChanged: (v) => setState(() => _asset = v!),
                   ),
                 ),
               ],
             ),
-            TextField(controller: TextEditingController(text: _category), style: const TextStyle(color: Colors.white), decoration: const InputDecoration(labelText: 'Category', labelStyle: TextStyle(color: Colors.white54)), onChanged: (v) => _category = v),
+            TextField(controller: TextEditingController(text: _category), style: TextStyle(color: fg), decoration: InputDecoration(labelText: 'Category', labelStyle: TextStyle(color: sub)), onChanged: (v) => _category = v),
             const SizedBox(height: 20),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
