@@ -20,6 +20,37 @@ class VerifiedBadge extends StatelessWidget {
   }
 }
 
+/// X-style affiliation mark: a small rounded square showing the affiliated
+/// company's avatar/logo, rendered right after the user's verification badge.
+/// Tapping could navigate to the company profile (handled by the caller).
+class AffiliateBadge extends StatelessWidget {
+  final String avatarUrl;
+  final double size;
+  const AffiliateBadge({super.key, required this.avatarUrl, this.size = 18});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(size * 0.25),
+        border: Border.all(color: Colors.white24, width: 1),
+        color: Colors.black26,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: avatarUrl.isNotEmpty
+          ? Image.network(
+              avatarUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) =>
+                  const Icon(Icons.business, size: 12, color: Colors.white70),
+            )
+          : const Icon(Icons.business, size: 12, color: Colors.white70),
+    );
+  }
+}
+
 /// Full-screen animated gift effect. All art is original Nova artwork drawn
 /// with CustomPainter — no copied assets.
 class GiftAnimationOverlay extends StatefulWidget {
