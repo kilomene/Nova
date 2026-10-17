@@ -7,6 +7,7 @@ import '../state/app_state.dart';
 import '../utils/format.dart';
 import '../widgets/ai_badge.dart';
 import '../widgets/gifts.dart';
+import 'affiliates.dart';
 import 'follow_list.dart';
 import 'inbox.dart';
 import 'edit_profile.dart';
@@ -255,6 +256,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                       const SizedBox(width: 4),
                       VerifiedBadge(size: 18, type: u.verificationType),
                     ],
+                    // X-style affiliation: company logo square next to the badge.
+                    if (u.affiliatedWith != null) ...[
+                      const SizedBox(width: 4),
+                      Tooltip(
+                        message:
+                            'Affiliated with @${u.affiliatedWith!.handle}',
+                        child: AffiliateBadge(
+                            avatarUrl: u.affiliatedWith!.avatarUrl, size: 18),
+                      ),
+                    ],
                     if (u.isOfficial) ...[
                       const SizedBox(width: 6),
                       Container(
@@ -432,6 +443,61 @@ class _ProfileScreenState extends State<ProfileScreen>
                         textAlign: TextAlign.center,
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis),
+                  ),
+                // X-style affiliates: only gold-badge companies have affiliates.
+                if (u.verificationType == 'company')
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 4),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AffiliatesScreen(
+                            companyUid: u.uid,
+                            companyHandle: u.handle,
+                            canManage: widget.self,
+                          ),
+                        ),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white10 : Colors.black12,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.business_outlined, size: 20),
+                            const SizedBox(width: 10),
+                            Text('Affiliates',
+                                style: TextStyle(
+                                    color: fg,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600)),
+                            const Spacer(),
+                            if (widget.self)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? Colors.white24
+                                      : Colors.black26,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text('Manage',
+                                    style: TextStyle(
+                                        color: fg, fontSize: 12)),
+                              ),
+                            const SizedBox(width: 6),
+                            Icon(Icons.chevron_right,
+                                color: sub, size: 20),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 const SizedBox(height: 8),
               ],
