@@ -7,7 +7,11 @@ import 'package:video_player/video_player.dart';
 
 import '../models.dart';
 import '../state/app_state.dart';
+import '../utils/format.dart';
+import '../widgets/ai_badge.dart';
 import '../widgets/gifts.dart';
+import '../widgets/nova_icons.dart';
+import 'discover.dart';
 import 'hashtag.dart';
 import 'profile.dart';
 import 'promote.dart';
@@ -31,10 +35,11 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
+    _tabs = TabController(length: 4, vsync: this, initialIndex: 3);
     _tabs.addListener(() {
-      final f = _tabs.index == 0;
-      if (f != _following) {
+      // Index 2 = Following, 3 = For You. Others are placeholders for now.
+      final f = _tabs.index == 2;
+      if (f != _following && _tabs.index >= 2) {
         setState(() {
           _following = f;
           _currentIndex.value = 0;
@@ -58,16 +63,35 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        leading: const LiveEntryButton(),
+        leadingWidth: 72,
         centerTitle: true,
         title: TabBar(
           controller: _tabs,
           isScrollable: true,
+          tabAlignment: TabAlignment.center,
           indicatorColor: const Color(0xFFFFC107),
+          indicatorWeight: 3,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white54,
-          tabs: const [Tab(text: 'Following'), Tab(text: 'For You')],
+          labelStyle:
+              const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          unselectedLabelStyle:
+              const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+          tabs: const [
+            Tab(text: 'Community'),
+            Tab(text: 'Local'),
+            Tab(text: 'Following'),
+            Tab(text: 'For You'),
+          ],
         ),
-        actions: const [LiveEntryButton()],
+        actions: [
+          IconButton(
+            icon: const NovaIcon.search(size: 24),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const DiscoverScreen())),
+          ),
+        ],
       ),
       body: Consumer<AppState>(
         builder: (context, state, _) {
@@ -202,13 +226,15 @@ class _VideoCardState extends State<VideoCard> {
                 ),
                 const SizedBox(height: 14),
                 _RailButton(
-                  icon: v.likedByMe ? Icons.favorite : Icons.favorite_border,
-                  color: v.likedByMe ? Colors.redAccent : Colors.white,
+                  iconWidget: NovaIcon.heart(
+                      active: v.likedByMe,
+                      size: 30,
+                      color: v.likedByMe ? Colors.redAccent : Colors.white),
                   label: _fmt(v.likeCount),
                   onTap: () => state.toggleLike(v),
                 ),
                 _RailButton(
-                  icon: Icons.chat_bubble_outline,
+                  iconWidget: const NovaIcon.comment(size: 30),
                   label: _fmt(v.commentCount),
                   onTap: () => showModalBottomSheet(
                     context: context,
@@ -224,7 +250,7 @@ class _VideoCardState extends State<VideoCard> {
                   onTap: () => setState(() => _saved = !_saved),
                 ),
                 _RailButton(
-                  icon: Icons.share_outlined,
+                  iconWidget: NovaIcon.share(size: 30),
                   label: _fmt(v.shareCount),
                   onTap: () async {
                     await Clipboard.setData(ClipboardData(text: 'Nova video by @${v.handle}: ${v.caption}'));
@@ -300,6 +326,10 @@ class _VideoCardState extends State<VideoCard> {
                               style: TextStyle(color: Color(0xFFFFC107), fontSize: 11, fontWeight: FontWeight.bold)),
                         ),
                       ],
+                      if (v.isAiGenerated) ...[
+                        const SizedBox(width: 8),
+                        const AiBadge(compact: true),
+                      ],
                     ],
                   ),
                 ),
@@ -330,19 +360,21 @@ class _VideoCardState extends State<VideoCard> {
     );
   }
 
-  String _fmt(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
-    return '$n';
-  }
+  String _fmt(int n) => formatCount(n);
 }
 
 class _RailButton extends StatelessWidget {
-  final IconData icon;
+  final IconData? icon;
+  final Widget? iconWidget;
   final String label;
   final VoidCallback onTap;
   final Color color;
-  const _RailButton({required this.icon, required this.label, required this.onTap, this.color = Colors.white});
+  const _RailButton(
+      {this.icon,
+      this.iconWidget,
+      required this.label,
+      required this.onTap,
+      this.color = Colors.white});
 
   @override
   Widget build(BuildContext context) {
@@ -352,9 +384,13 @@ class _RailButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 30),
+            iconWidget ?? Icon(icon, color: color, size: 30),
             const SizedBox(height: 2),
-            Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
+            Text(label,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600)),
           ],
         ),
       ),
