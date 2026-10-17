@@ -54,7 +54,7 @@ class _WalletScreenState extends State<WalletScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final w = state.wallet;
-    const gold = Color(0xFFFFC107);
+    final gold = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -115,23 +115,23 @@ class _WalletScreenState extends State<WalletScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Total balance',
+                          Text('Total balance',
                               style: TextStyle(
                                   color: Colors.white54, fontSize: 13)),
                           const SizedBox(height: 6),
                           _loadingBal
-                              ? const SizedBox(
+                              ? SizedBox(
                                   height: 22,
                                   width: 22,
                                   child: CircularProgressIndicator(
                                       strokeWidth: 2, color: gold))
                               : Text('${_evmBal ?? '—'} ETH',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 30,
                                       fontWeight: FontWeight.w800)),
                           Text('${_btcBal ?? '—'} BTC',
-                              style: const TextStyle(
+                              style: TextStyle(
                                   color: Colors.white70, fontSize: 15)),
                         ],
                       ),
@@ -217,9 +217,9 @@ class _WalletScreenState extends State<WalletScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 32),
-          const Icon(Icons.account_balance_wallet_outlined,
-              size: 72, color: Color(0xFFFFC107)),
+          SizedBox(height: 32),
+          Icon(Icons.account_balance_wallet_outlined,
+              size: 72, color: Theme.of(context).colorScheme.primary),
           const SizedBox(height: 16),
           const Text('Your Nova wallet',
               textAlign: TextAlign.center,
@@ -235,12 +235,12 @@ class _WalletScreenState extends State<WalletScreen> {
           ),
           const SizedBox(height: 24),
           if (!kycOk) ...[
-            const _Note(
+            _Note(
                 'KYC verification is required before a wallet can be created.'),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFC107),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
                   foregroundColor: Colors.black),
               onPressed: () async {
                 await Navigator.of(context).push(
@@ -254,7 +254,7 @@ class _WalletScreenState extends State<WalletScreen> {
           ] else
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFC107),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
                   foregroundColor: Colors.black),
               onPressed: () async {
                 final ok = await Navigator.of(context).push(
@@ -262,7 +262,7 @@ class _WalletScreenState extends State<WalletScreen> {
                         builder: (_) => const PinSetupScreen()));
                 if (ok == true) setState(() {});
               },
-              child: const Text('Create my wallet'),
+              child: Text('Create my wallet'),
             ),
         ],
       ),
@@ -284,14 +284,14 @@ class _WalletAction extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        padding: EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-              colors: [Color(0xFFFFD54F), Color(0xFFFF8F00)]),
+          gradient: LinearGradient(
+              colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.primary]),
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFFFFC107).withValues(alpha: 0.3),
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
               blurRadius: 12,
               offset: const Offset(0, 3),
             ),
@@ -302,7 +302,7 @@ class _WalletAction extends StatelessWidget {
             Icon(icon, color: Colors.black, size: 24),
             const SizedBox(height: 4),
             Text(label,
-                style: const TextStyle(
+                style: TextStyle(
                     color: Colors.black,
                     fontWeight: FontWeight.w800,
                     fontSize: 14)),
@@ -355,12 +355,12 @@ class _CoinRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(coin.symbol,
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
                           fontSize: 15)),
                   Text(coin.name,
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: Colors.white54, fontSize: 12)),
                 ],
               ),
@@ -429,17 +429,17 @@ class ReceiveCoinScreen extends StatelessWidget {
 /// Screen 2: "Choose network" with safety warning.
 class ReceiveNetworkScreen extends StatelessWidget {
   final WalletCoin coin;
-  const ReceiveNetworkScreen({super.key, required this.coin});
+  ReceiveNetworkScreen({super.key, required this.coin});
 
   @override
   Widget build(BuildContext context) {
-    const gold = Color(0xFFFFC107);
+    final gold = Theme.of(context).colorScheme.primary;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         title: Text('Receive ${coin.symbol}',
-            style: const TextStyle(fontWeight: FontWeight.w800)),
+            style: TextStyle(fontWeight: FontWeight.w800)),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -504,7 +504,7 @@ class ReceiveNetworkScreen extends StatelessWidget {
                       ),
                       child: Center(
                         child: Text(coin.iconGlyph,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: gold,
                                 fontSize: 22,
                                 fontWeight: FontWeight.bold)),
@@ -516,17 +516,17 @@ class ReceiveNetworkScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(net.code,
-                              style: const TextStyle(
+                              style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w800,
                                   fontSize: 16)),
                           Text(net.chain,
-                              style: const TextStyle(
+                              style: TextStyle(
                                   color: Colors.white54, fontSize: 13)),
                           const SizedBox(height: 4),
                           Text(
                             '${net.confirmations} block confirmation(s) · Min deposit: ${net.minDeposit}',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 color: Colors.white38, fontSize: 12),
                           ),
                         ],
@@ -566,13 +566,13 @@ class ReceiveAddressScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final address = _address(context);
-    const gold = Color(0xFFFFC107);
+    final gold = Theme.of(context).colorScheme.primary;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         title: Text('Receive ${coin.symbol} · ${network.code}',
-            style: const TextStyle(
+            style: TextStyle(
                 fontWeight: FontWeight.w800, fontSize: 16)),
       ),
       body: SingleChildScrollView(
@@ -610,7 +610,7 @@ class ReceiveAddressScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   Text(
                     '${coin.symbol} · ${network.code} (${network.chain})',
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: Colors.black87,
                         fontWeight: FontWeight.w700,
                         fontSize: 14),
@@ -636,11 +636,11 @@ class ReceiveAddressScreen extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(address,
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: Colors.white, fontSize: 13)),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.copy, color: gold),
+                    icon: Icon(Icons.copy, color: gold),
                     onPressed: () async {
                       await Clipboard.setData(
                           ClipboardData(text: address));
@@ -654,11 +654,11 @@ class ReceiveAddressScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(14),
+              padding: EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.08),
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -666,7 +666,7 @@ class ReceiveAddressScreen extends StatelessWidget {
                 '${network.confirmations} block confirmation(s) required. '
                 'Minimum deposit: ${network.minDeposit}.',
                 style:
-                    const TextStyle(color: Colors.amber, fontSize: 12),
+                    TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12),
               ),
             ),
             if (network.addressKind == 'tron') ...[
@@ -686,24 +686,24 @@ class ReceiveAddressScreen extends StatelessWidget {
               final handle = context.read<AppState>().me?.handle ?? '';
               final tag = '@$handle';
               return Container(
-                padding: const EdgeInsets.all(14),
+                padding: EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF161616),
+                  color: Color(0xFF161616),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: const Color(0xFFFFC107).withValues(alpha: 0.4)),
+                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.4)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.alternate_email,
-                        color: Color(0xFFFFC107), size: 20),
+                    Icon(Icons.alternate_email,
+                        color: Theme.of(context).colorScheme.primary, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(tag,
-                              style: const TextStyle(
+                              style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800)),
@@ -715,8 +715,8 @@ class ReceiveAddressScreen extends StatelessWidget {
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.copy,
-                          color: Color(0xFFFFC107)),
+                      icon: Icon(Icons.copy,
+                          color: Theme.of(context).colorScheme.primary),
                       onPressed: () async {
                         await Clipboard.setData(
                             ClipboardData(text: tag));
@@ -798,7 +798,7 @@ class _SendDetailsScreenState extends State<SendDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const gold = Color(0xFFFFC107);
+    final gold = Theme.of(context).colorScheme.primary;
     final valid =
         _to.text.trim().isNotEmpty && _amount.text.trim().isNotEmpty;
     return Scaffold(
@@ -806,7 +806,7 @@ class _SendDetailsScreenState extends State<SendDetailsScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         title: Text('Send ${widget.coin.symbol}',
-            style: const TextStyle(fontWeight: FontWeight.w800)),
+            style: TextStyle(fontWeight: FontWeight.w800)),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -823,7 +823,7 @@ class _SendDetailsScreenState extends State<SendDetailsScreen> {
             const SizedBox(height: 8),
             TextField(
               controller: _to,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 hintText: widget.coin.symbol == 'BTC'
                     ? 'bc1… or 1…/3…'
@@ -846,7 +846,7 @@ class _SendDetailsScreenState extends State<SendDetailsScreen> {
             const SizedBox(height: 8),
             TextField(
               controller: _amount,
-              style: const TextStyle(
+              style: TextStyle(
                   color: Colors.white,
                   fontSize: 22,
                   fontWeight: FontWeight.w700),
@@ -857,7 +857,7 @@ class _SendDetailsScreenState extends State<SendDetailsScreen> {
                 hintStyle: const TextStyle(color: Colors.white24),
                 suffixText: widget.coin.symbol,
                 suffixStyle:
-                    const TextStyle(color: gold, fontWeight: FontWeight.w700),
+                    TextStyle(color: gold, fontWeight: FontWeight.w700),
                 filled: true,
                 fillColor: const Color(0xFF161616),
                 border: OutlineInputBorder(
@@ -920,7 +920,7 @@ class _SendConfirmScreenState extends State<SendConfirmScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const gold = Color(0xFFFFC107);
+    final gold = Theme.of(context).colorScheme.primary;
     final state = context.read<AppState>();
     return Scaffold(
       backgroundColor: Colors.black,
@@ -944,7 +944,7 @@ class _SendConfirmScreenState extends State<SendConfirmScreen> {
               child: Column(
                 children: [
                   Text('${widget.amount} ${widget.coin.symbol}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: Colors.white,
                           fontSize: 32,
                           fontWeight: FontWeight.w800)),
@@ -964,7 +964,7 @@ class _SendConfirmScreenState extends State<SendConfirmScreen> {
             const SizedBox(height: 8),
             TextField(
               controller: _pin,
-              style: const TextStyle(color: Colors.white),
+              style: TextStyle(color: Colors.white),
               obscureText: true,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
@@ -1016,7 +1016,7 @@ class _SendConfirmScreenState extends State<SendConfirmScreen> {
                       }
                     },
               child: _sending
-                  ? const SizedBox(
+                  ? SizedBox(
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(
@@ -1052,7 +1052,7 @@ class _SendConfirmScreenState extends State<SendConfirmScreen> {
           SizedBox(
               width: 80,
               child: Text(label,
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: Colors.white54, fontSize: 13))),
           Expanded(
             child: Text(value,
@@ -1073,12 +1073,12 @@ class _Note extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.all(12),
       decoration: BoxDecoration(
-          color: Colors.amber.withValues(alpha: 0.08),
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(8)),
       child: Text(text,
-          style: const TextStyle(color: Colors.amber, fontSize: 12)),
+          style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12)),
     );
   }
 }
