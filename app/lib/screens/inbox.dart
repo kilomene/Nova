@@ -108,7 +108,7 @@ class _InboxScreenState extends State<InboxScreen> {
     final bg = isDark ? Colors.black : Colors.white;
     final fg = isDark ? Colors.white : Colors.black87;
     final sub = isDark ? Colors.white54 : Colors.black54;
-    const gold = Color(0xFFFFC107);
+    final gold = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
       backgroundColor: bg,
@@ -146,7 +146,7 @@ class _InboxScreenState extends State<InboxScreen> {
         onRefresh: _refresh,
         color: gold,
         child: _loading
-            ? const Center(child: CircularProgressIndicator(color: gold))
+            ? Center(child: CircularProgressIndicator(color: gold))
             : ListView(
                 children: [
                   _buildStoriesRow(fg, sub),
@@ -677,7 +677,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
         title: Text('Activity', style: TextStyle(color: fg, fontWeight: FontWeight.w800)),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
+          ? Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary))
           : _items.isEmpty
               ? Center(child: Text('No activity yet', style: TextStyle(color: sub)))
               : ListView.builder(
@@ -788,7 +788,7 @@ class _SystemNotificationsScreenState extends State<SystemNotificationsScreen> {
         title: Text('System notifications', style: TextStyle(color: fg, fontWeight: FontWeight.w800)),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
+          ? Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary))
           : _items.isEmpty
               ? Center(child: Text('No notifications', style: TextStyle(color: sub)))
               : ListView.builder(
@@ -800,10 +800,10 @@ class _SystemNotificationsScreenState extends State<SystemNotificationsScreen> {
                       leading: Container(
                         width: 44, height: 44,
                         decoration: BoxDecoration(
-                            color: unread ? const Color(0xFFFFC107).withValues(alpha: 0.2) : Colors.grey.shade800,
+                            color: unread ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2) : Colors.grey.shade800,
                             shape: BoxShape.circle),
                         child: Icon(_iconFor('${n['type'] ?? ''}'),
-                            color: unread ? const Color(0xFFFFC107) : Colors.white70),
+                            color: unread ? Theme.of(context).colorScheme.primary : Colors.white70),
                       ),
                       title: Text('${n['title'] ?? ''}',
                           style: TextStyle(color: fg, fontWeight: unread ? FontWeight.w700 : FontWeight.w400)),
@@ -945,10 +945,10 @@ class _ChatScreenState extends State<ChatScreen> {
         actions: [
           if (_streak > 0)
             Padding(
-              padding: const EdgeInsets.only(right: 4),
+              padding: EdgeInsets.only(right: 4),
               child: Chip(
-                backgroundColor: const Color(0xFFFFC107).withValues(alpha: 0.15),
-                label: Text('🔥 $_streak', style: const TextStyle(color: Color(0xFFFFC107), fontWeight: FontWeight.bold, fontSize: 13)),
+                backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                label: Text('🔥 $_streak', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 13)),
                 padding: EdgeInsets.zero,
               ),
             ),
@@ -963,7 +963,7 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
+                ? Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary))
                 : _messages.isEmpty
                     ? const Center(child: Text('Say hello 👋', style: TextStyle(color: Colors.white38)))
                     : ListView.builder(
@@ -975,10 +975,10 @@ class _ChatScreenState extends State<ChatScreen> {
                           return Align(
                             alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                             child: Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              margin: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                               decoration: BoxDecoration(
-                                color: mine ? const Color(0xFFFFC107) : const Color(0xFF242424),
+                                color: mine ? Theme.of(context).colorScheme.primary : Color(0xFF242424),
                                 borderRadius: BorderRadius.circular(18),
                               ),
                               child: Text(m.text, style: TextStyle(color: mine ? Colors.black : Colors.white)),
@@ -1016,11 +1016,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 IconButton(
                   tooltip: 'Send crypto',
-                  icon: const Icon(Icons.currency_bitcoin, color: Color(0xFF20D5EC)),
+                  icon: Icon(Icons.currency_bitcoin, color: Color(0xFF20D5EC)),
                   onPressed: () => _sendCrypto(context, widget.peerHandle),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.send, color: Color(0xFFFFC107)),
+                  icon: Icon(Icons.send, color: Theme.of(context).colorScheme.primary),
                   onPressed: () async {
                     final t = _ctrl.text.trim();
                     if (t.isEmpty) return;
@@ -1171,7 +1171,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         ChoiceChip(
                           label: Text(c),
                           selected: coin == c,
-                          selectedColor: const Color(0xFFFFC107),
+                          selectedColor: Theme.of(context).colorScheme.primary,
                           labelStyle: TextStyle(
                               color: coin == c ? Colors.black : Colors.white70,
                               fontWeight: FontWeight.w700),
@@ -1194,8 +1194,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         }),
                         child: Text(
                             enteringUsd ? 'Enter in $coin' : 'Enter in USD',
-                            style: const TextStyle(
-                                color: Color(0xFFFFC107), fontSize: 12)),
+                            style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary, fontSize: 12)),
                       ),
                     ],
                   ),
@@ -1207,14 +1207,14 @@ class _ChatScreenState extends State<ChatScreen> {
                         fontWeight: FontWeight.w800),
                     keyboardType: const TextInputType.numberWithOptions(
                         decimal: true),
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: '0.00',
                       hintStyle: TextStyle(color: Colors.white24),
                       enabledBorder: UnderlineInputBorder(
                           borderSide: BorderSide(color: Colors.white24)),
                       focusedBorder: UnderlineInputBorder(
                           borderSide:
-                              BorderSide(color: Color(0xFFFFC107))),
+                              BorderSide(color: Theme.of(context).colorScheme.primary)),
                     ),
                     onChanged: (_) => setD(() {}),
                   ),
@@ -1251,10 +1251,10 @@ class _ChatScreenState extends State<ChatScreen> {
             actions: [
               TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel')),
+                  child: Text('Cancel')),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFFC107),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Colors.black),
                 onPressed: () {
                   final amt = double.tryParse(amountCtrl.text.trim()) ?? 0;
@@ -1334,9 +1334,9 @@ class _ChatScreenState extends State<ChatScreen> {
               CheckboxListTile(
                 value: confirmed,
                 onChanged: (v) => setD(() => confirmed = v ?? false),
-                title: const Text('I confirm this send.',
+                title: Text('I confirm this send.',
                     style: TextStyle(color: Colors.white, fontSize: 13)),
-                activeColor: const Color(0xFFFFC107),
+                activeColor: Theme.of(context).colorScheme.primary,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
               ),
