@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Nova's premium icon set: hand-drawn with CustomPainter, gold gradient
-/// fills and a soft glow. Never stock Material icons on primary surfaces.
+/// Nova's icon set: hand-drawn with CustomPainter, monochrome
+/// fills (white in dark theme, black in light theme). Never stock Material icons on primary surfaces.
 ///
 /// Usage: `NovaIcon.home(active: true, size: 28)` etc.
 class NovaIcon extends StatelessWidget {
@@ -37,7 +37,7 @@ class NovaIcon extends StatelessWidget {
       : kind = NovaIconKind.share;
   const NovaIcon.play({super.key, this.active = false, this.size = 26, this.color})
       : kind = NovaIconKind.play;
-  const NovaIcon.live({super.key, this.active = false, this.size = 26, this.color})
+  NovaIcon.live({super.key, this.active = false, this.size = 26, this.color})
       : kind = NovaIconKind.live;
 
   @override
@@ -46,12 +46,12 @@ class NovaIcon extends StatelessWidget {
     final isDark = brightness == Brightness.dark;
     final base = color ??
         (active
-            ? const Color(0xFFFFC107)
+            ? (isDark ? Colors.white : Colors.black)
             : (isDark ? Colors.white70 : Colors.black87));
 
     return CustomPaint(
       size: Size(size, size),
-      painter: _NovaIconPainter(kind: kind, active: active, base: base),
+      painter: _NovaIconPainter(kind: kind, active: active, base: base, isDark: isDark),
     );
   }
 }
@@ -62,8 +62,9 @@ class _NovaIconPainter extends CustomPainter {
   final NovaIconKind kind;
   final bool active;
   final Color base;
+  final bool isDark;
 
-  _NovaIconPainter({required this.kind, required this.active, required this.base});
+  _NovaIconPainter({required this.kind, required this.active, required this.base, required this.isDark});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -72,31 +73,18 @@ class _NovaIconPainter extends CustomPainter {
     final cy = s / 2;
 
     // Premium treatment: soft outer glow when active.
+    final activeColor = isDark ? Colors.white : Colors.black;
     final glowPaint = Paint()
-      ..color = const Color(0xFFFFC107).withValues(alpha: active ? 0.35 : 0.0)
+      ..color = activeColor.withValues(alpha: active ? 0.35 : 0.0)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
 
-    // Gold gradient for active state, flat base color otherwise.
+    // Solid fill for active state (no gold gradient), flat base color otherwise.
     final fill = Paint()
-      ..shader = active
-          ? const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFFFD54F), Color(0xFFFF8F00)],
-            ).createShader(Rect.fromLTWH(0, 0, s, s))
-          : null
-      ..color = active ? Colors.white : base
+      ..color = active ? activeColor : base
       ..style = PaintingStyle.fill;
 
     final stroke = Paint()
-      ..shader = active
-          ? const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFFFD54F), Color(0xFFFF8F00)],
-            ).createShader(Rect.fromLTWH(0, 0, s, s))
-          : null
-      ..color = active ? Colors.white : base
+      ..color = active ? activeColor : base
       ..style = PaintingStyle.stroke
       ..strokeWidth = s * 0.075
       ..strokeCap = StrokeCap.round
@@ -288,23 +276,20 @@ class _NovaIconPainter extends CustomPainter {
 /// more premium than a flat Material icon.
 class NovaCreateButton extends StatelessWidget {
   final double size;
-  const NovaCreateButton({super.key, this.size = 46});
+  NovaCreateButton({super.key, this.size = 46});
 
   @override
   Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFFFD54F), Color(0xFFFFB300), Color(0xFFFF8F00)],
-        ),
+        color: accent,
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFFFC107).withValues(alpha: 0.45),
+            color: accent.withValues(alpha: 0.45),
             blurRadius: 14,
             spreadRadius: 1,
           ),
