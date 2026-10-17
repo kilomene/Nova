@@ -19,7 +19,6 @@ class P2PScreen extends StatefulWidget {
 
 class _P2PScreenState extends State<P2PScreen>
     with SingleTickerProviderStateMixin {
-  static const gold = Color(0xFFFFC107);
   late final TabController _tabs;
   String _coin = 'USDT';
   String _fiat = 'NGN';
@@ -66,18 +65,18 @@ class _P2PScreenState extends State<P2PScreen>
         elevation: 0,
         title: TabBar(
           controller: _tabs,
-          indicatorColor: gold,
+          indicatorColor: Theme.of(context).colorScheme.primary,
           indicatorWeight: 3,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white54,
           labelStyle:
               const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-          tabs: const [Tab(text: 'Buy'), Tab(text: 'Sell')],
+          tabs: [Tab(text: 'Buy'), Tab(text: 'Sell')],
         ),
         actions: [
           IconButton(
             tooltip: 'Post ad',
-            icon: const Icon(Icons.add_circle_outline, color: gold),
+            icon: Icon(Icons.add_circle_outline, color: Theme.of(context).colorScheme.primary),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => const CreateOfferScreen())),
           ),
@@ -114,10 +113,10 @@ class _P2PScreenState extends State<P2PScreen>
               ],
             ),
           ),
-          const Divider(color: Colors.white10, height: 1),
+          Divider(color: Colors.white10, height: 1),
           Expanded(
             child: RefreshIndicator(
-              color: gold,
+              color: Theme.of(context).colorScheme.primary,
               onRefresh: () => state.loadOffers(),
               child: offers.isEmpty
                   ? ListView(
@@ -190,7 +189,6 @@ class _AdvertiserCard extends StatelessWidget {
   final P2POffer offer;
   const _AdvertiserCard({required this.offer});
 
-  static const gold = Color(0xFFFFC107);
 
   @override
   Widget build(BuildContext context) {
@@ -215,8 +213,8 @@ class _AdvertiserCard extends StatelessWidget {
                     o.handle.isNotEmpty
                         ? o.handle[0].toUpperCase()
                         : '?',
-                    style: const TextStyle(
-                        color: gold, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -231,9 +229,9 @@ class _AdvertiserCard extends StatelessWidget {
                                   color: Colors.white,
                                   fontWeight: FontWeight.w600,
                                   fontSize: 14)),
-                          const SizedBox(width: 6),
-                          const Icon(Icons.verified,
-                              size: 14, color: gold),
+                          SizedBox(width: 6),
+                          Icon(Icons.verified,
+                              size: 14, color: Theme.of(context).colorScheme.primary),
                         ],
                       ),
                       const SizedBox(height: 2),
@@ -309,11 +307,11 @@ class _AdvertiserCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: 12),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: gold,
-                    foregroundColor: Colors.black,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
                     padding: const EdgeInsets.symmetric(
                         horizontal: 26, vertical: 10),
                     shape: RoundedRectangleBorder(
@@ -345,7 +343,6 @@ class P2POrderScreen extends StatefulWidget {
 }
 
 class _P2POrderScreenState extends State<P2POrderScreen> {
-  static const gold = Color(0xFFFFC107);
   final _amountCtrl = TextEditingController();
   final _chatCtrl = TextEditingController();
   String _selectedMethod = '';
@@ -450,8 +447,8 @@ class _P2POrderScreenState extends State<P2POrderScreen> {
                       o.handle.isNotEmpty
                           ? o.handle[0].toUpperCase()
                           : '?',
-                      style: const TextStyle(
-                          color: gold,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.bold,
                           fontSize: 18)),
                 ),
@@ -467,9 +464,9 @@ class _P2POrderScreenState extends State<P2POrderScreen> {
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16)),
-                          const SizedBox(width: 6),
-                          const Icon(Icons.verified,
-                              size: 15, color: gold),
+                          SizedBox(width: 6),
+                          Icon(Icons.verified,
+                              size: 15, color: Theme.of(context).colorScheme.primary),
                         ],
                       ),
                       Text(
@@ -481,8 +478,8 @@ class _P2POrderScreenState extends State<P2POrderScreen> {
                 ),
                 Text('${o.price.toStringAsFixed(2)}\n${o.fiatCurrency}',
                     textAlign: TextAlign.right,
-                    style: const TextStyle(
-                        color: gold,
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.bold,
                         fontSize: 16)),
               ],
@@ -533,7 +530,7 @@ class _P2POrderScreenState extends State<P2POrderScreen> {
                     ChoiceChip(
                       label: Text(m),
                       selected: _selectedMethod == m,
-                      selectedColor: gold,
+                      selectedColor: Theme.of(context).colorScheme.primary,
                       backgroundColor: const Color(0xFF161616),
                       labelStyle: TextStyle(
                           color: _selectedMethod == m
@@ -567,13 +564,13 @@ class _P2POrderScreenState extends State<P2POrderScreen> {
                   ),
                 ),
               ],
-              const SizedBox(height: 20),
+              SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: gold,
-                    foregroundColor: Colors.black,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
                     padding:
                         const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -612,11 +609,11 @@ class _P2POrderScreenState extends State<P2POrderScreen> {
                             fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     Text('Pay ${_escrow!.fiatAmount.toStringAsFixed(2)} ${_escrow!.fiatCurrency} via $_selectedMethod',
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: Colors.white70)),
-                    const SizedBox(height: 4),
+                    SizedBox(height: 4),
                     Text('You receive ${_escrow!.cryptoAmount} ${_escrow!.asset}',
-                        style: const TextStyle(color: gold)),
+                        style: TextStyle(color: Theme.of(context).colorScheme.primary)),
                   ],
                 ),
               ),
@@ -671,8 +668,8 @@ class _P2POrderScreenState extends State<P2POrderScreen> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.send,
-                              color: gold, size: 20),
+                          icon: Icon(Icons.send,
+                              color: Theme.of(context).colorScheme.primary, size: 20),
                           onPressed: () {
                             final t = _chatCtrl.text.trim();
                             if (t.isEmpty) return;
@@ -693,8 +690,8 @@ class _P2POrderScreenState extends State<P2POrderScreen> {
                     width: double.infinity,
                     child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                            backgroundColor: gold,
-                            foregroundColor: Colors.black,
+                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            foregroundColor: Theme.of(context).colorScheme.onPrimary,
                             padding: const EdgeInsets.symmetric(
                                 vertical: 14)),
                         onPressed: _busy
@@ -763,7 +760,6 @@ class _EscrowProgress extends StatelessWidget {
   final Escrow escrow;
   const _EscrowProgress({required this.escrow});
 
-  static const gold = Color(0xFFFFC107);
 
   @override
   Widget build(BuildContext context) {
@@ -779,22 +775,22 @@ class _EscrowProgress extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.lock_outline,
-                  color: gold, size: 16),
+              Icon(Icons.lock_outline,
+                  color: Theme.of(context).colorScheme.primary, size: 16),
               const SizedBox(width: 6),
               Text('Escrow ${escrow.id.length > 8 ? escrow.id.substring(0, 8) : escrow.id}…',
                   style: const TextStyle(
                       color: Colors.white54, fontSize: 12)),
-              const Spacer(),
+              Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(
+                padding: EdgeInsets.symmetric(
                     horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                    color: gold.withValues(alpha: 0.15),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(20)),
                 child: Text(escrow.status.replaceAll('_', ' ').toUpperCase(),
-                    style: const TextStyle(
-                        color: gold,
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
                         fontSize: 11,
                         fontWeight: FontWeight.bold)),
               ),
@@ -811,7 +807,7 @@ class _EscrowProgress extends StatelessWidget {
                   Expanded(
                       child: Container(
                           height: 2,
-                          color: idx > i ? gold : Colors.white12)),
+                          color: idx > i ? Theme.of(context).colorScheme.primary : Colors.white12)),
               ],
             ],
           ),
@@ -846,7 +842,6 @@ class _StepDot extends StatelessWidget {
   final String label;
   const _StepDot({required this.done, required this.label});
 
-  static const gold = Color(0xFFFFC107);
 
   @override
   Widget build(BuildContext context) {
@@ -857,7 +852,7 @@ class _StepDot extends StatelessWidget {
           height: 22,
           decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: done ? gold : Colors.white12),
+              color: done ? Theme.of(context).colorScheme.primary : Colors.white12),
           child: done
               ? const Icon(Icons.check, size: 14, color: Colors.black)
               : null,
@@ -880,7 +875,6 @@ class CreateOfferScreen extends StatefulWidget {
 }
 
 class _CreateOfferScreenState extends State<CreateOfferScreen> {
-  static const gold = Color(0xFFFFC107);
   String _side = 'sell'; // maker sells → buyers come
   String _asset = 'USDT';
   String _fiat = 'NGN';
@@ -917,7 +911,7 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
                   backgroundColor:
                       WidgetStateProperty.resolveWith((states) =>
                           states.contains(WidgetState.selected)
-                              ? gold.withValues(alpha: 0.2)
+                              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
                               : null),
                   foregroundColor:
                       WidgetStateProperty.all(Colors.white)),
@@ -969,11 +963,11 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
                 controller: _methods,
                 label: 'Payment methods (comma separated)'),
             _Field(controller: _terms, label: 'Terms (optional)'),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                  backgroundColor: gold,
-                  foregroundColor: Colors.black,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
                   padding:
                       const EdgeInsets.symmetric(vertical: 14)),
               onPressed: _busy
