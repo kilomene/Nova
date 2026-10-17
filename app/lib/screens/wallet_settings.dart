@@ -215,7 +215,7 @@ class _WalletSettingsScreenState extends State<WalletSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final gold = const Color(0xFFFFC107);
+    final gold = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -268,7 +268,7 @@ class _WalletSettingsScreenState extends State<WalletSettingsScreen> {
               onPressed: _changing ? null : _changePin,
               style: ElevatedButton.styleFrom(
                 backgroundColor: gold,
-                foregroundColor: Colors.black,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
