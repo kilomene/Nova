@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../models.dart';
 import '../state/app_state.dart';
+import '../utils/format.dart';
+import '../widgets/ai_badge.dart';
 import '../widgets/gifts.dart';
 import 'inbox.dart';
 import 'monetization.dart';
@@ -12,8 +14,8 @@ import 'report.dart';
 import 'settings.dart';
 import 'wallet.dart';
 
-/// Profile page with Videos + Store tabs. Self view includes wallet, P2P,
-/// Nova Coin, verification, and settings shortcuts.
+/// TikTok-style profile in Nova's dark+gold premium skin.
+/// Supports both dark and light themes.
 class ProfileScreen extends StatefulWidget {
   final bool self;
   final String? uid;
@@ -24,18 +26,27 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends State<ProfileScreen>
+    with SingleTickerProviderStateMixin {
   NovaUser? _user;
   int _followers = 0;
   int _following = 0;
-  int _videos = 0;
+  int _likes = 0;
   bool _loading = true;
   bool _isFollowing = false;
+  late TabController _tabs;
 
   @override
   void initState() {
     super.initState();
+    _tabs = TabController(length: 2, vsync: this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -48,13 +59,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _user = await state.fetchUser(widget.uid ?? widget.handle ?? '');
         _isFollowing = state.followingUids.contains(_user?.uid);
         if (state.isDemo) {
-          _followers = 1200; // demo placeholder
+          _followers = 1200;
+          _following = 340;
+          _likes = 8600;
         } else if (_user != null) {
           try {
             final r = await state.api.get('/api/users/${_user!.uid}');
             final counts = r['counts'] as Map?;
             _followers = (counts?['followers'] ?? 0) as int;
             _following = (counts?['following'] ?? 0) as int;
+            _likes = (counts?['likes'] ?? 0) as int;
           } catch (_) {}
         }
       }
@@ -64,47 +78,83 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Colors.black : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white60 : Colors.black54;
+    final faint = isDark ? Colors.white38 : Colors.black38;
+    const gold = Color(0xFFFFC107);
+
     if (_loading) {
-      return const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator(color: Color(0xFFFFC107))));
+      return Scaffold(
+        backgroundColor: bg,
+        body: const Center(child: CircularProgressIndicator(color: gold)),
+      );
     }
+    final state = context.watch<AppState>();
     final u = _user ?? state.me;
     if (u == null) {
-      return const Scaffold(backgroundColor: Colors.black, body: Center(child: Text('User not found', style: TextStyle(color: Colors.white54))));
+      return Scaffold(
+        backgroundColor: bg,
+        body: Center(child: Text('User not found', style: TextStyle(color: sub))),
+      );
     }
     final myVideos = state.feed.where((v) => v.uid == u.uid).toList();
-    final myListings = state.listings.where((l) => l.uid == u.uid).toList();
-    _videos = myVideos.length;
+    final likedVideos = state.feed.where((v) => v.likedByMe).toList();
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: bg,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        title: Text('@${u.handle}'),
+        backgroundColor: bg,
+        elevation: 0,
+        leading: widget.self
+            ? null
+            : IconButton(
+                icon: Icon(Icons.arrow_back, color: fg),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+        centerTitle: true,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('@${u.handle}',
+                style: TextStyle(color: fg, fontSize: 17, fontWeight: FontWeight.w700)),
+            if (u.isVerified) ...[
+              const SizedBox(width: 5),
+              const VerifiedBadge(size: 16)
+            ],
+          ],
+        ),
         actions: [
           if (!widget.self)
             IconButton(
-              icon: const Icon(Icons.flag_outlined),
-              onPressed: () => showReportDialog(context, targetType: 'user', targetId: u.uid),
+              icon: Icon(Icons.flag_outlined, color: fg),
+              onPressed: () =>
+                  showReportDialog(context, targetType: 'user', targetId: u.uid),
             ),
           if (!widget.self)
             PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert),
-              color: const Color(0xFF1a1a1a),
+              icon: Icon(Icons.more_vert, color: fg),
+              color: isDark ? const Color(0xFF1a1a1a) : Colors.white,
               onSelected: (v) async {
-                final state = context.read<AppState>();
                 if (v == 'block') {
                   final ok = await showDialog<bool>(
                     context: context,
                     builder: (context) => AlertDialog(
-                      backgroundColor: const Color(0xFF1a1a1a),
-                      title: Text('Block @${u.handle}?', style: const TextStyle(color: Colors.white)),
-                      content: const Text('They will not be able to see your content, profile, or messages until you unblock them.',
-                          style: TextStyle(color: Colors.white70)),
+                      backgroundColor: isDark ? const Color(0xFF1a1a1a) : Colors.white,
+                      title: Text('Block @${u.handle}?',
+                          style: TextStyle(color: fg)),
+                      content: Text(
+                          'They will not be able to see your content, profile, or messages until you unblock them.',
+                          style: TextStyle(color: sub)),
                       actions: [
-                        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+                        TextButton(
+                            onPressed: () => Navigator.of(context).pop(false),
+                            child: const Text('Cancel')),
                         ElevatedButton(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.redAccent,
+                              foregroundColor: Colors.white),
                           onPressed: () => Navigator.of(context).pop(true),
                           child: const Text('Block'),
                         ),
@@ -114,169 +164,294 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   if (ok == true && context.mounted) {
                     await state.blockUser(u.uid);
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('@${u.handle} blocked.')));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('@${u.handle} blocked.')));
                       Navigator.of(context).pop();
                     }
                   }
                 }
               },
               itemBuilder: (context) => const [
-                PopupMenuItem(value: 'block', child: Text('Block user', style: TextStyle(color: Colors.redAccent))),
+                PopupMenuItem(
+                    value: 'block',
+                    child: Text('Block user',
+                        style: TextStyle(color: Colors.redAccent))),
               ],
             ),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            CircleAvatar(
-              radius: 44,
-              backgroundColor: Colors.white24,
-              backgroundImage: u.avatarUrl.isNotEmpty ? NetworkImage(u.avatarUrl) : null,
-              child: u.avatarUrl.isEmpty ? Text(u.handle.isNotEmpty ? u.handle[0].toUpperCase() : '?', style: const TextStyle(fontSize: 32)) : null,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+      body: NestedScrollView(
+        headerSliverBuilder: (context, _) => [
+          SliverToBoxAdapter(
+            child: Column(
               children: [
-                Text('@${u.handle}', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                if (u.isVerified) ...[const SizedBox(width: 6), const VerifiedBadge(size: 18)],
-                if (u.isOfficial) ...[
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(color: const Color(0xFFFFC107), borderRadius: BorderRadius.circular(4)),
-                    child: const Text('OFFICIAL', style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-                if (u.isBot) ...[
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                        color: Colors.white12, borderRadius: BorderRadius.circular(4), border: Border.all(color: Colors.white24)),
-                    child: const Text('BOT', style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ],
-            ),
-            if (u.displayName.isNotEmpty) Text(u.displayName, style: const TextStyle(color: Colors.white70)),
-            if (u.bio.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 4),
-                child: Text(u.bio, style: const TextStyle(color: Colors.white60), textAlign: TextAlign.center),
-              ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _Stat(n: _videos, label: 'Videos'),
-                _Stat(n: _followers, label: 'Followers'),
-                _Stat(n: _following, label: 'Following'),
-                _Stat(n: u.tradesCompleted, label: 'Trades'),
-              ],
-            ),
-            if (u.traderScore > 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text('Trader score: ${u.traderScore.toStringAsFixed(0)} ★',
-                    style: const TextStyle(color: Color(0xFFFFC107), fontWeight: FontWeight.w600)),
-              ),
-            const SizedBox(height: 12),
-            if (widget.self)
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.center,
-                children: [
-                  _ActionChip(icon: Icons.account_balance_wallet_outlined, label: 'Wallet', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const WalletScreen()))),
-                  _ActionChip(icon: Icons.swap_horiz, label: 'P2P', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const P2PScreen()))),
-                  _ActionChip(icon: Icons.monetization_on_outlined, label: 'Nova Coins', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CoinsScreen()))),
-                  _ActionChip(icon: Icons.storefront_outlined, label: 'Market', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MarketplaceScreen()))),
-                  _ActionChip(icon: Icons.verified_outlined, label: state.verificationActive ? 'Verified ✓' : 'Get verified', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const VerificationScreen()))),
-                  _ActionChip(icon: Icons.settings_outlined, label: 'Settings', onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen()))),
-                ],
-              )
-            else
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
-                    onPressed: () async {
-                      await state.toggleFollow(u.uid);
-                      setState(() => _isFollowing = !_isFollowing);
-                    },
-                    child: Text(_isFollowing ? 'Following' : 'Follow'),
-                  ),
-                  const SizedBox(width: 12),
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
-                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(peerUid: u.uid, peerHandle: u.handle))),
-                    child: const Text('Message'),
-                  ),
-                ],
-              ),
-            const SizedBox(height: 8),
-            DefaultTabController(
-              length: 2,
-              child: Column(
-                children: [
-                  const TabBar(
-                    indicatorColor: Color(0xFFFFC107),
-                    labelColor: Colors.white,
-                    unselectedLabelColor: Colors.white54,
-                    tabs: [Tab(icon: Icon(Icons.grid_view)), Tab(icon: Icon(Icons.storefront_outlined))],
-                  ),
-                  SizedBox(
-                    height: 420,
-                    child: TabBarView(
-                      children: [
-                        myVideos.isEmpty
-                            ? const Center(child: Text('No videos yet', style: TextStyle(color: Colors.white38)))
-                            : GridView.builder(
-                                physics: const NeverScrollableScrollPhysics(),
-                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 0.7),
-                                itemCount: myVideos.length,
-                                itemBuilder: (context, i) {
-                                  final v = myVideos[i];
-                                  return Container(
-                                    margin: const EdgeInsets.all(1),
-                                    color: const Color(0xFF1a1a1a),
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        const Icon(Icons.play_arrow, color: Colors.white54, size: 36),
-                                        Positioned(
-                                          bottom: 4,
-                                          left: 4,
-                                          right: 4,
-                                          child: Text(v.caption, style: const TextStyle(color: Colors.white70, fontSize: 10), maxLines: 2, overflow: TextOverflow.ellipsis),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                        myListings.isEmpty
-                            ? const Center(child: Text('No products yet', style: TextStyle(color: Colors.white38)))
-                            : ListView.builder(
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: myListings.length,
-                                itemBuilder: (context, i) {
-                                  final l = myListings[i];
-                                  return ListTile(
-                                    title: Text(l.title, style: const TextStyle(color: Colors.white)),
-                                    subtitle: Text('\$${l.priceUsd.toStringAsFixed(2)} · ${l.asset}', style: const TextStyle(color: Color(0xFFFFC107))),
-                                    trailing: const Icon(Icons.chevron_right, color: Colors.white54),
-                                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProductDetailScreen(listing: l))),
-                                  );
-                                },
-                              ),
-                      ],
+                const SizedBox(height: 8),
+                // Centered avatar with follow badge.
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFFD54F), Color(0xFFFF8F00)],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: gold.withValues(alpha: 0.35),
+                            blurRadius: 16,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: CircleAvatar(
+                        radius: 46,
+                        backgroundColor: isDark ? Colors.white12 : Colors.black12,
+                        backgroundImage: u.avatarUrl.isNotEmpty
+                            ? NetworkImage(u.avatarUrl)
+                            : null,
+                        child: u.avatarUrl.isEmpty
+                            ? Text(
+                                u.handle.isNotEmpty
+                                    ? u.handle[0].toUpperCase()
+                                    : '?',
+                                style: TextStyle(fontSize: 34, color: fg))
+                            : null,
+                      ),
                     ),
+                    if (!widget.self && !_isFollowing)
+                      Positioned(
+                        bottom: 0,
+                        child: GestureDetector(
+                          onTap: () async {
+                            await state.toggleFollow(u.uid);
+                            setState(() => _isFollowing = true);
+                          },
+                          child: Container(
+                            width: 26,
+                            height: 26,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Color(0xFFFFC107),
+                            ),
+                            child: const Icon(Icons.add,
+                                size: 18, color: Colors.black),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                // Name + handle.
+                if (u.displayName.isNotEmpty)
+                  Text(u.displayName,
+                      style: TextStyle(
+                          color: fg,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('@${u.handle}',
+                        style: TextStyle(color: fg, fontSize: 15)),
+                    if (u.isOfficial) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                            color: gold,
+                            borderRadius: BorderRadius.circular(4)),
+                        child: const Text('OFFICIAL',
+                            style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                    if (u.isBot) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                            color: isDark ? Colors.white12 : Colors.black12,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                                color: isDark
+                                    ? Colors.white24
+                                    : Colors.black12)),
+                        child: Text('BOT',
+                            style: TextStyle(
+                                color: sub,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 10),
+                // Following / Followers / Likes — TikTok compact counts.
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _Stat(
+                        n: formatCount(_following),
+                        label: 'Following',
+                        fg: fg,
+                        sub: sub),
+                    _Stat(
+                        n: formatCount(_followers),
+                        label: 'Followers',
+                        fg: fg,
+                        sub: sub),
+                    _Stat(
+                        n: formatCount(_likes), label: 'Likes', fg: fg, sub: sub),
+                  ],
+                ),
+                if (u.bio.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 40, vertical: 8),
+                    child: Text(u.bio,
+                        style: TextStyle(color: sub, fontSize: 13),
+                        textAlign: TextAlign.center,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis),
                   ),
+                if (u.traderScore > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                        'Trader score: ${u.traderScore.toStringAsFixed(0)} ★',
+                        style: const TextStyle(
+                            color: gold, fontWeight: FontWeight.w600, fontSize: 13)),
+                  ),
+                const SizedBox(height: 10),
+                // Quick actions.
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: widget.self
+                      ? Row(
+                          children: [
+                            Expanded(
+                                child: _GoldButton(
+                                    label: 'Edit profile',
+                                    onTap: () => Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                const SettingsScreen())))),
+                            const SizedBox(width: 10),
+                            Expanded(
+                                child: _OutlineButton(
+                                    label: 'Share profile',
+                                    isDark: isDark,
+                                    onTap: () {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(const SnackBar(
+                                              content: Text(
+                                                  'Profile link copied.')));
+                                    })),
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            Expanded(
+                                child: _isFollowing
+                                    ? _OutlineButton(
+                                        label: 'Following',
+                                        isDark: isDark,
+                                        onTap: () async {
+                                          await state.toggleFollow(u.uid);
+                                          setState(
+                                              () => _isFollowing = false);
+                                        })
+                                    : _GoldButton(
+                                        label: 'Follow',
+                                        onTap: () async {
+                                          await state.toggleFollow(u.uid);
+                                          setState(
+                                              () => _isFollowing = true);
+                                        })),
+                            const SizedBox(width: 10),
+                            Expanded(
+                                child: _OutlineButton(
+                                    label: 'Message',
+                                    isDark: isDark,
+                                    onTap: () => Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                            builder: (_) => ChatScreen(
+                                                peerUid: u.uid,
+                                                peerHandle: u.handle))))),
+                          ],
+                        ),
+                ),
+                if (widget.self) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      _ActionChip(
+                          icon: Icons.account_balance_wallet_outlined,
+                          label: 'Wallet',
+                          isDark: isDark,
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const WalletScreen()))),
+                      _ActionChip(
+                          icon: Icons.swap_horiz,
+                          label: 'P2P',
+                          isDark: isDark,
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const P2PScreen()))),
+                      _ActionChip(
+                          icon: Icons.monetization_on_outlined,
+                          label: 'Nova Coins',
+                          isDark: isDark,
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) => const CoinsScreen()))),
+                      _ActionChip(
+                          icon: Icons.storefront_outlined,
+                          label: 'Market',
+                          isDark: isDark,
+                          onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      const MarketplaceScreen()))),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ],
+        body: Column(
+          children: [
+            TabBar(
+              controller: _tabs,
+              indicatorColor: gold,
+              indicatorWeight: 2.5,
+              labelColor: fg,
+              unselectedLabelColor: faint,
+              tabs: const [
+                Tab(icon: Icon(Icons.grid_view, size: 22)),
+                Tab(icon: Icon(Icons.favorite_border, size: 22)),
+              ],
+            ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabs,
+                children: [
+                  _videoGrid(myVideos, isDark, sub,
+                      empty: 'No videos yet'),
+                  _videoGrid(likedVideos, isDark, sub,
+                      empty: 'No liked videos yet'),
                 ],
               ),
             ),
@@ -285,22 +460,148 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
+
+  Widget _videoGrid(List<NovaVideo> videos, bool isDark, Color sub,
+      {required String empty}) {
+    if (videos.isEmpty) {
+      return Center(child: Text(empty, style: TextStyle(color: sub)));
+    }
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        childAspectRatio: 0.75,
+        crossAxisSpacing: 1,
+        mainAxisSpacing: 1,
+      ),
+      itemCount: videos.length,
+      itemBuilder: (context, i) {
+        final v = videos[i];
+        return Container(
+          color: isDark ? const Color(0xFF161616) : Colors.black12,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (v.mediaUrl.isNotEmpty)
+                Image.network(v.mediaUrl, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox())
+              else
+                const Icon(Icons.play_arrow,
+                    color: Colors.white54, size: 36),
+              // AI badge on grid thumbnails.
+              if (v.isAiGenerated)
+                const Positioned(top: 4, left: 4, child: AiBadge(compact: true)),
+              Positioned(
+                bottom: 4,
+                left: 4,
+                child: Row(
+                  children: [
+                    const Icon(Icons.play_arrow,
+                        color: Colors.white, size: 14),
+                    const SizedBox(width: 2),
+                    Text(formatCount(v.viewCount),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            shadows: [
+                              Shadow(blurRadius: 4, color: Colors.black)
+                            ])),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _Stat extends StatelessWidget {
-  final int n;
+  final String n;
   final String label;
-  const _Stat({required this.n, required this.label});
+  final Color fg;
+  final Color sub;
+  const _Stat(
+      {required this.n, required this.label, required this.fg, required this.sub});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         children: [
-          Text('$n', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-          Text(label, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          Text(n,
+              style: TextStyle(
+                  color: fg, fontWeight: FontWeight.w800, fontSize: 17)),
+          const SizedBox(height: 2),
+          Text(label, style: TextStyle(color: sub, fontSize: 12)),
         ],
+      ),
+    );
+  }
+}
+
+class _GoldButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _GoldButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+              colors: [Color(0xFFFFD54F), Color(0xFFFF8F00)]),
+          borderRadius: BorderRadius.circular(4),
+          boxShadow: [
+            BoxShadow(
+                color: const Color(0xFFFFC107).withValues(alpha: 0.35),
+                blurRadius: 8,
+                offset: const Offset(0, 2)),
+          ],
+        ),
+        child: Text(label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.w800,
+                fontSize: 14)),
+      ),
+    );
+  }
+}
+
+class _OutlineButton extends StatelessWidget {
+  final String label;
+  final bool isDark;
+  final VoidCallback onTap;
+  const _OutlineButton(
+      {required this.label, required this.isDark, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+              color: isDark ? Colors.white24 : Colors.black26, width: 1.2),
+        ),
+        child: Text(label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: isDark ? Colors.white : Colors.black87,
+                fontWeight: FontWeight.w700,
+                fontSize: 14)),
       ),
     );
   }
@@ -309,8 +610,13 @@ class _Stat extends StatelessWidget {
 class _ActionChip extends StatelessWidget {
   final IconData icon;
   final String label;
+  final bool isDark;
   final VoidCallback onTap;
-  const _ActionChip({required this.icon, required this.label, required this.onTap});
+  const _ActionChip(
+      {required this.icon,
+      required this.label,
+      required this.isDark,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -319,13 +625,21 @@ class _ActionChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(border: Border.all(color: Colors.white24), borderRadius: BorderRadius.circular(20)),
+        decoration: BoxDecoration(
+            border: Border.all(
+                color: isDark ? Colors.white24 : Colors.black26),
+            borderRadius: BorderRadius.circular(20)),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: const Color(0xFFFFC107)),
+            Icon(icon,
+                size: 16,
+                color: const Color(0xFFFFC107)),
             const SizedBox(width: 6),
-            Text(label, style: const TextStyle(color: Colors.white, fontSize: 13)),
+            Text(label,
+                style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black87,
+                    fontSize: 13)),
           ],
         ),
       ),
