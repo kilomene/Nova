@@ -20,11 +20,15 @@ subprojects {
 }
 
 // Force compileSdk 36 for all Android plugins (file_picker requires android-36).
-gradle.projectsEvaluated {
-    rootProject.subprojects {
-        val androidExt = extensions.findByName("android")
-        if (androidExt is com.android.build.gradle.BaseExtension) {
-            androidExt.compileSdkVersion(36)
+subprojects {
+    pluginManager.withPlugin("com.android.library") {
+        extensions.configure<com.android.build.gradle.LibraryExtension> {
+            compileSdk = 36
+        }
+    }
+    pluginManager.withPlugin("com.android.application") {
+        extensions.configure<com.android.build.gradle.AppExtension> {
+            compileSdk = 36
         }
     }
 }
