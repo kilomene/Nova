@@ -85,7 +85,7 @@ class SettingsScreen extends StatelessWidget {
           _Row(
             icon: Icons.verified_outlined,
             title: 'Verification badge',
-            subtitle: state.verificationActive ? 'Active ✓' : '\$25/month — get the blue tick',
+            subtitle: state.verificationActive ? 'You\'re verified' : '\$25/month — get the blue tick',
             onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const VerificationScreen())),
           ),
           const Divider(color: Colors.white12),
