@@ -2,14 +2,19 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-/// Small blue-tick badge shown next to verified handles.
+/// Verification badge shown next to verified handles.
+/// type: 'personal' (blue, Facebook-style) | 'business' (pink).
 class VerifiedBadge extends StatelessWidget {
   final double size;
-  const VerifiedBadge({super.key, this.size = 14});
+  final String type;
+  const VerifiedBadge({super.key, this.size = 14, this.type = 'personal'});
 
   @override
   Widget build(BuildContext context) {
-    return Icon(Icons.verified, size: size, color: const Color(0xFF20D5EC));
+    final color = type == 'business'
+        ? const Color(0xFFFF2E63) // pink — business verification
+        : const Color(0xFF20D5EC); // blue — personal verification
+    return Icon(Icons.verified, size: size, color: color);
   }
 }
 
