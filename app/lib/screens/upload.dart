@@ -694,7 +694,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
               SizedBox(height: 12),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
+                    backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
                 onPressed: _initCamera,
                 child: const Text('Retry'),
               ),
@@ -1109,7 +1109,7 @@ class _SoundPickerScreenState extends State<SoundPickerScreen> {
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
                             backgroundColor: Theme.of(context).colorScheme.primary,
-                            foregroundColor: Colors.black),
+                            foregroundColor: Theme.of(context).colorScheme.onPrimary),
                         onPressed: () {
                           setState(() {
                             _loading = true;
