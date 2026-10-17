@@ -125,6 +125,47 @@ async function ensureVideoOptionsColumns(db: D1Database): Promise<void> {
   videoOptsEnsured = true;
 }
 
+// Inbox tables: stories (24h expiry), story_views, system_notifications.
+// Deploy-safe: CREATE TABLE IF NOT EXISTS, called lazily per request.
+let inboxTablesEnsured = false;
+async function ensureInboxTables(db: D1Database): Promise<void> {
+  if (inboxTablesEnsured) return;
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS stories (
+      id TEXT PRIMARY KEY,
+      uid TEXT NOT NULL,
+      media_key TEXT NOT NULL,
+      media_type TEXT NOT NULL DEFAULT 'photo',
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    )`),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_stories_uid ON stories(uid, expires_at)'),
+    db.prepare(`CREATE TABLE IF NOT EXISTS story_views (
+      story_id TEXT NOT NULL,
+      uid TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (story_id, uid)
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS system_notifications (
+      id TEXT PRIMARY KEY,
+      uid TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      type TEXT NOT NULL DEFAULT 'general',
+      created_at INTEGER NOT NULL,
+      read_at INTEGER NOT NULL DEFAULT 0
+    )`),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_sysnotif_uid ON system_notifications(uid, created_at)'),
+    db.prepare(`CREATE TABLE IF NOT EXISTS thread_reads (
+      thread_id TEXT NOT NULL,
+      uid TEXT NOT NULL,
+      last_read_at INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (thread_id, uid)
+    )`),
+  ]);
+  inboxTablesEnsured = true;
+}
+
 // coin_purchases maps each Flutterwave tx_ref to its buyer + package so the
 // webhook/callback settler never has to parse underscores out of tx_refs
 // (package ids like "coins_500" contain them). Same deploy-safety pattern.
@@ -149,7 +190,16 @@ async function adminGuard(request: Request, env: Env): Promise<void> {
 }
 
 // Notify a user: realtime event + FCM push to registered devices.
+// Also persists to system_notifications so it shows in the inbox
+// System notifications list (account flags, support replies, payouts,
+// orders, strikes/bans, seller reviews, broadcasts).
 async function notifyUser(env: Env, uid: string, title: string, body: string, data: Record<string, string> = {}): Promise<void> {
+  try {
+    await ensureInboxTables(env.DB);
+    await env.DB.prepare(
+      'INSERT INTO system_notifications (id, uid, title, body, type, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(newId(), uid, title.slice(0, 120), body.slice(0, 500), data.kind || 'general', now()).run();
+  } catch { /* persistence is best-effort */ }
   await publishToUser(env, uid, { type: 'notify', title, body, ...data });
   try {
     const rows = await env.DB.prepare('SELECT token FROM push_tokens WHERE uid = ?').bind(uid).all<{ token: string }>();
@@ -248,7 +298,7 @@ interface PublicUser {
 
 async function publicUser(db: D1Database, uidOrHandle: string): Promise<PublicUser | null> {
   const row = await db
-    .prepare('SELECT uid, handle, username, display_name, bio, avatar_url, kyc_status, status, is_bot, is_official, totp_enabled, trader_score, trades_completed, created_at FROM users WHERE uid = ? OR handle = ? OR username = ?')
+    .prepare('SELECT uid, handle, username, display_name, bio, avatar_url, kyc_status, status, is_bot, is_official, is_verified, totp_enabled, trader_score, trades_completed, created_at FROM users WHERE uid = ? OR handle = ? OR username = ?')
     .bind(uidOrHandle, uidOrHandle, uidOrHandle)
     .first<Record<string, unknown>>();
   if (!row) return null;
@@ -268,7 +318,7 @@ async function publicUser(db: D1Database, uidOrHandle: string): Promise<PublicUs
     trader_score: (row.trader_score as number) || 0,
     trades_completed: (row.trades_completed as number) || 0,
     created_at: (row.created_at as number) || 0,
-    is_verified: (row.is_official ? true : await isVerified(db, uid)),
+    is_verified: !!row.is_verified || !!row.is_official || await isVerified(db, uid),
   };
 }
 
@@ -1132,17 +1182,142 @@ export default {
       // ---------- messaging ----------
       if (path === '/api/inbox' && method === 'GET') {
         const uid = await guard(request, env);
+        await ensureInboxTables(env.DB);
         const rows = await env.DB.prepare(
-          `SELECT t.*, u.handle AS peer_handle, u.display_name AS peer_name, u.avatar_url AS peer_avatar
+          `SELECT t.*, u.handle AS peer_handle, u.display_name AS peer_name, u.avatar_url AS peer_avatar,
+                  (SELECT COUNT(*) FROM messages m
+                    WHERE m.thread_id = t.id AND m.sender_uid != ?
+                      AND m.created_at > COALESCE((SELECT last_read_at FROM thread_reads r WHERE r.thread_id = t.id AND r.uid = ?), 0)
+                  ) AS unread_count
            FROM threads t JOIN users u ON u.uid = CASE WHEN t.user_a = ? THEN t.user_b ELSE t.user_a END
            WHERE (t.user_a = ? OR t.user_b = ?)
              AND u.uid NOT IN (SELECT blocked_uid FROM blocks WHERE blocker_uid = ?)
              AND u.uid NOT IN (SELECT blocker_uid FROM blocks WHERE blocked_uid = ?)
            ORDER BY t.updated_at DESC LIMIT 50`,
         )
-          .bind(uid, uid, uid, uid, uid)
+          .bind(uid, uid, uid, uid, uid, uid, uid)
           .all();
         return json({ threads: rows.results });
+      }
+      // ---------- inbox: new followers ----------
+      if (path === '/api/inbox/followers' && method === 'GET') {
+        const uid = await guard(request, env);
+        const limit = vNum(url.searchParams.get('limit') || 50, 'limit', 1, 100);
+        const rows = await env.DB.prepare(
+          `SELECT u.uid, u.handle, u.display_name, u.avatar_url, f.created_at
+           FROM follows f JOIN users u ON u.uid = f.follower_uid
+           WHERE f.followee_uid = ?
+           ORDER BY f.created_at DESC LIMIT ?`,
+        ).bind(uid, limit).all();
+        return json({ followers: rows.results });
+      }
+      // ---------- inbox: activity (likes on my videos, comments on my videos) ----------
+      if (path === '/api/inbox/activity' && method === 'GET') {
+        const uid = await guard(request, env);
+        const limit = vNum(url.searchParams.get('limit') || 50, 'limit', 1, 100);
+        // Likes on my videos.
+        const likes = await env.DB.prepare(
+          `SELECT 'like' AS kind, l.created_at, v.id AS video_id,
+                  u.uid AS actor_uid, u.handle AS actor_handle,
+                  u.display_name AS actor_name, u.avatar_url AS actor_avatar,
+                  '' AS text
+           FROM likes l
+           JOIN videos v ON v.id = l.video_id
+           JOIN users u ON u.uid = l.uid
+           WHERE v.uid = ? AND l.uid != ?
+           ORDER BY l.created_at DESC LIMIT ?`,
+        ).bind(uid, uid, limit).all();
+        // Comments on my videos.
+        const comments = await env.DB.prepare(
+          `SELECT 'comment' AS kind, c.created_at, v.id AS video_id,
+                  u.uid AS actor_uid, u.handle AS actor_handle,
+                  u.display_name AS actor_name, u.avatar_url AS actor_avatar,
+                  substr(c.text, 1, 120) AS text
+           FROM comments c
+           JOIN videos v ON v.id = c.video_id
+           JOIN users u ON u.uid = c.uid
+           WHERE v.uid = ? AND c.uid != ?
+           ORDER BY c.created_at DESC LIMIT ?`,
+        ).bind(uid, uid, limit).all();
+        const items = [...(likes.results as unknown[]), ...(comments.results as unknown[])].sort(
+          (a, b) => ((b as Record<string, number>).created_at as number) - ((a as Record<string, number>).created_at as number),
+        ).slice(0, limit);
+        return json({ activity: items });
+      }
+      // ---------- inbox: system notifications ----------
+      if (path === '/api/inbox/system' && method === 'GET') {
+        const uid = await guard(request, env);
+        await ensureInboxTables(env.DB);
+        const limit = vNum(url.searchParams.get('limit') || 50, 'limit', 1, 100);
+        const rows = await env.DB.prepare(
+          'SELECT id, title, body, type, created_at, read_at FROM system_notifications WHERE uid = ? ORDER BY created_at DESC LIMIT ?',
+        ).bind(uid, limit).all();
+        const unread = await env.DB.prepare(
+          'SELECT COUNT(*) AS c FROM system_notifications WHERE uid = ? AND read_at = 0',
+        ).bind(uid).first<{ c: number }>();
+        return json({ notifications: rows.results, unread: unread?.c ?? 0 });
+      }
+      if (path === '/api/inbox/system/read' && method === 'POST') {
+        const uid = await guard(request, env);
+        await ensureInboxTables(env.DB);
+        const b = await readJson(request) as Record<string, unknown>;
+        const id = typeof b.id === 'string' && b.id ? b.id : null;
+        if (id) {
+          await env.DB.prepare('UPDATE system_notifications SET read_at = ? WHERE id = ? AND uid = ?').bind(now(), id, uid).run();
+        } else {
+          await env.DB.prepare('UPDATE system_notifications SET read_at = ? WHERE uid = ? AND read_at = 0').bind(now(), uid).run();
+        }
+        return json({ ok: true });
+      }
+      // ---------- stories ----------
+      if (path === '/api/stories' && method === 'POST') {
+        const uid = await guard(request, env, 30);
+        await ensureInboxTables(env.DB);
+        const b = await readJson(request) as Record<string, unknown>;
+        const mediaKey = vStr(b.mediaKey, 'mediaKey', 1, 300);
+        const mediaType = (typeof b.mediaType === 'string' && b.mediaType === 'video') ? 'video' : 'photo';
+        const t = now();
+        // Prune expired stories opportunistically.
+        await env.DB.prepare('DELETE FROM stories WHERE expires_at < ?').bind(t).run();
+        const id = newId();
+        await env.DB.prepare(
+          'INSERT INTO stories (id, uid, media_key, media_type, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
+        ).bind(id, uid, mediaKey, mediaType, t, t + 24 * 3600 * 1000).run();
+        return json({ id }, 201);
+      }
+      if (path === '/api/stories/feed' && method === 'GET') {
+        const uid = await guard(request, env);
+        await ensureInboxTables(env.DB);
+        const t = now();
+        await env.DB.prepare('DELETE FROM stories WHERE expires_at < ?').bind(t).run();
+        // Stories from people I follow + my own, newest first, grouped by user.
+        const rows = await env.DB.prepare(
+          `SELECT s.id, s.uid, s.media_key, s.media_type, s.created_at,
+                  u.handle, u.display_name, u.avatar_url,
+                  (SELECT COUNT(*) FROM story_views v WHERE v.story_id = s.id AND v.uid = ?) AS viewed
+           FROM stories s JOIN users u ON u.uid = s.uid
+           WHERE s.expires_at > ? AND (s.uid = ? OR s.uid IN (SELECT followee_uid FROM follows WHERE follower_uid = ?))
+           ORDER BY s.created_at DESC LIMIT 100`,
+        ).bind(uid, t, uid, uid).all();
+        const out: Record<string, unknown>[] = [];
+        for (const r of rows.results as Record<string, unknown>[]) {
+          let mediaUrl: string = `/media/${r.media_key}`;
+          try {
+            mediaUrl = await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string);
+          } catch { /* fall back to unsigned */ }
+          out.push({ ...r, media_url: mediaUrl });
+        }
+        return json({ stories: out });
+      }
+      {
+        const m = path.match(/^\/api\/stories\/([^/]+)\/view$/);
+        if (m && method === 'POST') {
+          const uid = await guard(request, env);
+          await ensureInboxTables(env.DB);
+          await env.DB.prepare('INSERT OR IGNORE INTO story_views (story_id, uid, created_at) VALUES (?, ?, ?)')
+            .bind(vStr(m[1], 'storyId', 1, 64), uid, now()).run();
+          return json({ ok: true });
+        }
       }
       {
         const m = path.match(/^\/api\/threads\/([^/]+)\/messages$/);
@@ -1154,6 +1329,12 @@ export default {
           const rows = await env.DB.prepare('SELECT * FROM messages WHERE thread_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT 50')
             .bind(tid, cursor)
             .all();
+          // Mark thread as read.
+          try {
+            await ensureInboxTables(env.DB);
+            await env.DB.prepare('INSERT INTO thread_reads (thread_id, uid, last_read_at) VALUES (?, ?, ?) ON CONFLICT(thread_id, uid) DO UPDATE SET last_read_at = excluded.last_read_at')
+              .bind(tid, uid, now()).run();
+          } catch { /* read tracking is best-effort */ }
           return json({ messages: (rows.results as unknown[]).reverse() });
         }
         if (m && method === 'POST') {
