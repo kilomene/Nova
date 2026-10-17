@@ -59,8 +59,12 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Colors.black : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white54 : Colors.black54;
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: bg,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -73,8 +77,8 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
           tabAlignment: TabAlignment.center,
           indicatorColor: const Color(0xFFFFC107),
           indicatorWeight: 3,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white54,
+          labelColor: fg,
+          unselectedLabelColor: sub,
           labelStyle:
               const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
           unselectedLabelStyle:
@@ -100,8 +104,8 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
             return const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)));
           }
           if (state.feed.isEmpty) {
-            return const Center(
-              child: Text('No videos yet — be the first to upload.', style: TextStyle(color: Colors.white54)),
+            return Center(
+              child: Text('No videos yet — be the first to upload.', style: TextStyle(color: sub)),
             );
           }
           return PageView.builder(
@@ -207,6 +211,9 @@ class _VideoCardState extends State<VideoCard> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final v = widget.video;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final phBg = isDark ? const Color(0xFF111111) : const Color(0xFFF0F0F0);
+    final phFg = isDark ? Colors.white54 : Colors.black54;
     return GestureDetector(
       onDoubleTap: _doubleTapLike,
       onLongPress: _openLongPressMenu,
@@ -226,10 +233,10 @@ class _VideoCardState extends State<VideoCard> {
             FittedBox(fit: BoxFit.cover, child: SizedBox(width: _c!.value.size.width, height: _c!.value.size.height, child: VideoPlayer(_c!)))
           else
             Container(
-              color: const Color(0xFF111111),
+              color: phBg,
               child: Center(
                 child: _error != null
-                    ? Text(_error!, style: const TextStyle(color: Colors.white54))
+                    ? Text(_error!, style: TextStyle(color: phFg))
                     : const CircularProgressIndicator(color: Color(0xFFFFC107)),
               ),
             ),
@@ -282,7 +289,7 @@ class _VideoCardState extends State<VideoCard> {
                   iconWidget: NovaIcon.share(size: 30),
                   label: _fmt(v.shareCount),
                   onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: 'https://nova.app/v/${v.id}'));
+                    await Clipboard.setData(ClipboardData(text: 'https://user.novamail.store/v/${v.id}'));
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied')));
                     }
@@ -293,14 +300,18 @@ class _VideoCardState extends State<VideoCard> {
                   label: 'More',
                   onTap: () => showModalBottomSheet(
                     context: context,
-                    backgroundColor: const Color(0xFF1a1a1a),
-                    builder: (_) => SafeArea(
+                    backgroundColor: (Theme.of(context).brightness == Brightness.dark) ? const Color(0xFF1a1a1a) : Colors.white,
+                    builder: (_) => Builder(builder: (sheetCtx) {
+                      final sheetDark = Theme.of(sheetCtx).brightness == Brightness.dark;
+                      final sheetFg = sheetDark ? Colors.white : Colors.black87;
+                      final sheetSub = sheetDark ? Colors.white54 : Colors.black54;
+                      return SafeArea(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           ListTile(
                             leading: const Icon(Icons.flag_outlined, color: Colors.redAccent),
-                            title: const Text('Report video', style: TextStyle(color: Colors.white)),
+                            title: Text('Report video', style: TextStyle(color: sheetFg)),
                             onTap: () {
                               Navigator.of(context).pop();
                               showReportDialog(context, targetType: 'video', targetId: v.id);
@@ -309,9 +320,9 @@ class _VideoCardState extends State<VideoCard> {
                           if (v.uid == state.me?.uid)
                             ListTile(
                               leading: const Icon(Icons.rocket_launch_outlined, color: Color(0xFFFFC107)),
-                              title: const Text('Promote video', style: TextStyle(color: Colors.white)),
-                              subtitle: const Text('Boost in For You · from \$7/day',
-                                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+                              title: Text('Promote video', style: TextStyle(color: sheetFg)),
+                              subtitle: Text('Boost in For You · from \$7/day',
+                                  style: TextStyle(color: sheetSub, fontSize: 12)),
                               onTap: () {
                                 Navigator.of(context).pop();
                                 Navigator.of(context).push(MaterialPageRoute(
@@ -320,7 +331,8 @@ class _VideoCardState extends State<VideoCard> {
                             ),
                         ],
                       ),
-                    ),
+                    );
+                    }),
                   ),
                 ),
               ],
@@ -342,7 +354,7 @@ class _VideoCardState extends State<VideoCard> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('@${v.handle}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(v.displayName.isNotEmpty ? v.displayName : '@${v.handle}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                       if (v.promoted) ...[
                         const SizedBox(width: 8),
                         Container(
@@ -457,22 +469,29 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final sheetBg = isDark ? const Color(0xFF161616) : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white70 : Colors.black54;
+    final faint = isDark ? Colors.white38 : Colors.black38;
+    final fieldFill = isDark ? const Color(0xFF242424) : const Color(0xFFF0F0F0);
+    final avatarBg = isDark ? Colors.white24 : Colors.black12;
     return DraggableScrollableSheet(
       initialChildSize: 0.65,
       minChildSize: 0.4,
       maxChildSize: 0.95,
       builder: (context, scroll) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF161616),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        decoration: BoxDecoration(
+          color: sheetBg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
         ),
         child: Column(
           children: [
             const SizedBox(height: 8),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: avatarBg, borderRadius: BorderRadius.circular(2))),
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Text('${widget.video.commentCount} comments', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              child: Text('${widget.video.commentCount} comments', style: TextStyle(color: fg, fontWeight: FontWeight.bold)),
             ),
             Expanded(
               child: _loading
@@ -484,19 +503,19 @@ class _CommentsSheetState extends State<CommentsSheet> {
                         final c = _comments[i];
                         return ListTile(
                           leading: CircleAvatar(
-                            backgroundColor: Colors.white24,
+                            backgroundColor: avatarBg,
                             backgroundImage: c.avatarUrl.isNotEmpty ? NetworkImage(c.avatarUrl) : null,
                             child: c.avatarUrl.isEmpty ? Text(c.handle.isNotEmpty ? c.handle[0].toUpperCase() : '?') : null,
                           ),
                           title: Row(
                             children: [
-                              Text(c.handle, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                              if (c.isVerified) ...[const SizedBox(width: 4), const VerifiedBadge(size: 13)],
+                              Text(c.handle, style: TextStyle(color: fg, fontWeight: FontWeight.bold, fontSize: 13)),
+                              if (c.isVerified) ...[const SizedBox(width: 4), VerifiedBadge(size: 13, type: c.verificationType)],
                             ],
                           ),
-                          subtitle: Text(c.text, style: const TextStyle(color: Colors.white70)),
+                          subtitle: Text(c.text, style: TextStyle(color: sub)),
                           trailing: IconButton(
-                            icon: const Icon(Icons.flag_outlined, size: 16, color: Colors.white38),
+                            icon: Icon(Icons.flag_outlined, size: 16, color: faint),
                             onPressed: () => showReportDialog(context, targetType: 'comment', targetId: c.id),
                           ),
                         );
@@ -510,13 +529,13 @@ class _CommentsSheetState extends State<CommentsSheet> {
                   Expanded(
                     child: TextField(
                       controller: _ctrl,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: const InputDecoration(
+                      style: TextStyle(color: fg),
+                      decoration: InputDecoration(
                         hintText: 'Add a comment…',
-                        hintStyle: TextStyle(color: Colors.white38),
+                        hintStyle: TextStyle(color: faint),
                         filled: true,
-                        fillColor: Color(0xFF242424),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20)), borderSide: BorderSide.none),
+                        fillColor: fieldFill,
+                        border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20)), borderSide: BorderSide.none),
                       ),
                     ),
                   ),
