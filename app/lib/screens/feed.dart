@@ -75,7 +75,7 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
           controller: _tabs,
           isScrollable: true,
           tabAlignment: TabAlignment.center,
-          indicatorColor: const Color(0xFFFFC107),
+          indicatorColor: Theme.of(context).colorScheme.primary,
           indicatorWeight: 3,
           labelColor: fg,
           unselectedLabelColor: sub,
@@ -101,7 +101,7 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
       body: Consumer<AppState>(
         builder: (context, state, _) {
           if (state.feedLoading && state.feed.isEmpty) {
-            return const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)));
+            return Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary));
           }
           if (state.feed.isEmpty) {
             return Center(
@@ -237,7 +237,7 @@ class _VideoCardState extends State<VideoCard> {
               child: Center(
                 child: _error != null
                     ? Text(_error!, style: TextStyle(color: phFg))
-                    : const CircularProgressIndicator(color: Color(0xFFFFC107)),
+                    : CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
               ),
             ),
           if (_showHeart)
@@ -281,7 +281,7 @@ class _VideoCardState extends State<VideoCard> {
                 ),
                 _RailButton(
                   icon: _saved ? Icons.bookmark : Icons.bookmark_border,
-                  color: _saved ? const Color(0xFFFFC107) : Colors.white,
+                  color: _saved ? Theme.of(context).colorScheme.primary : Colors.white,
                   label: 'Save',
                   onTap: () => setState(() => _saved = !_saved),
                 ),
@@ -319,7 +319,7 @@ class _VideoCardState extends State<VideoCard> {
                           ),
                           if (v.uid == state.me?.uid)
                             ListTile(
-                              leading: const Icon(Icons.rocket_launch_outlined, color: Color(0xFFFFC107)),
+                              leading: Icon(Icons.rocket_launch_outlined, color: Theme.of(context).colorScheme.primary),
                               title: Text('Promote video', style: TextStyle(color: sheetFg)),
                               subtitle: Text('Boost in For You · from \$7/day',
                                   style: TextStyle(color: sheetSub, fontSize: 12)),
@@ -360,12 +360,12 @@ class _VideoCardState extends State<VideoCard> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFC107).withValues(alpha: 0.2),
+                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: const Color(0xFFFFC107), width: 1),
+                            border: Border.all(color: Theme.of(context).colorScheme.primary, width: 1),
                           ),
                           child: const Text('Promoted',
-                              style: TextStyle(color: Color(0xFFFFC107), fontSize: 11, fontWeight: FontWeight.bold)),
+                              style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 11, fontWeight: FontWeight.bold)),
                         ),
                       ],
                       if (v.isAiGenerated) ...[
@@ -495,7 +495,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
             ),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
+                  ? Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary))
                   : ListView.builder(
                       controller: scroll,
                       itemCount: _comments.length,
@@ -540,7 +540,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.send, color: Color(0xFFFFC107)),
+                    icon: Icon(Icons.send, color: Theme.of(context).colorScheme.primary),
                     onPressed: () async {
                       final t = _ctrl.text.trim();
                       if (t.isEmpty) return;
