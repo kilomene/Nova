@@ -57,9 +57,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Update'),
           ),
@@ -109,9 +109,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                       _Row('Shipping', d.receipt.shippingUsd),
                       _Row('Tax', d.receipt.taxUsd),
                       _Row('Total', d.receipt.totalUsd, bold: true),
-                      const SizedBox(height: 8),
-                      Text('Paid with: ${d.receipt.paymentMethod}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                      Text('Status: ${(d.order['status'] ?? '')}', style: const TextStyle(color: Color(0xFFFFC107), fontSize: 12)),
+                      SizedBox(height: 8),
+                      Text('Paid with: ${d.receipt.paymentMethod}', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                      Text('Status: ${(d.order['status'] ?? '')}', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12)),
                       if (d.receipt.trackingNumber.isNotEmpty)
                         Text('Tracking: ${d.receipt.carrier} ${d.receipt.trackingNumber}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
                     ]),
@@ -133,7 +133,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                         children: [
                           for (final s in ['paid', 'shipped', 'completed', 'cancelled'])
                             ElevatedButton(
-                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1a1a1a), foregroundColor: const Color(0xFFFFC107)),
+                              style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF1a1a1a), foregroundColor: Theme.of(context).colorScheme.primary),
                               onPressed: () => _advance(s),
                               child: Text(s),
                             ),
