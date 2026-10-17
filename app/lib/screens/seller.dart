@@ -182,12 +182,12 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> {
       backgroundColor: bg,
       appBar: AppBar(backgroundColor: bg, title: Text('Become a seller', style: TextStyle(color: fg))),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (status == 'pending')
-              const _Banner('Application under review. You will be notified.', Colors.amber)
+              _Banner('Application under review. You will be notified.', Theme.of(context).colorScheme.primary)
             else if (status == 'verified')
               const _Banner('You are a verified seller ✓', Colors.greenAccent)
             else if (status == 'rejected')
@@ -243,17 +243,17 @@ class _SellerOnboardingScreenState extends State<SellerOnboardingScreen> {
                 onChanged: (v) => setState(() => _idType = v!),
               ),
               _F(_idNumber, 'Identity number (SSN / NIN / …)', fg, sub),
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: _pick,
-                icon: const Icon(Icons.upload_file, color: Color(0xFFFFC107)),
+                icon: Icon(Icons.upload_file, color: Theme.of(context).colorScheme.primary),
                 label: Text(_idDocPath == null ? 'Attach government ID scan' : 'ID attached ✓',
                     style: TextStyle(color: fg)),
               ),
-              const SizedBox(height: 16),
+              SizedBox(height: 16),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+                    backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
                 onPressed: _busy || status == 'pending' ? null : _submit,
                 child: Text(_busy
                     ? 'Submitting…'
