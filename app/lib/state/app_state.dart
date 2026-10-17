@@ -157,6 +157,48 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Update the current user's profile (display name, handle, bio).
+  /// Uses /api/users/sync to persist; updates local state immediately.
+  Future<void> updateProfile({
+    required String displayName,
+    required String handle,
+    required String bio,
+  }) async {
+    final current = me;
+    if (current == null) throw Exception('Not signed in');
+    // Optimistic local update.
+    me = NovaUser(
+      uid: current.uid,
+      handle: handle.isNotEmpty ? handle : current.handle,
+      username: current.username,
+      displayName: displayName,
+      bio: bio,
+      avatarUrl: current.avatarUrl,
+      kycStatus: current.kycStatus,
+      status: current.status,
+      isBot: current.isBot,
+      isOfficial: current.isOfficial,
+      totpEnabled: current.totpEnabled,
+      traderScore: current.traderScore,
+      tradesCompleted: current.tradesCompleted,
+      isVerified: current.isVerified,
+    );
+    notifyListeners();
+    if (!isDemo) {
+      try {
+        await api.post('/api/users/sync', {
+          'handle': me!.handle,
+          'displayName': me!.displayName,
+          'bio': me!.bio,
+          'email': auth.email ?? '',
+          'deviceId': deviceId,
+        });
+      } catch (_) {
+        // Local update stands; sync will retry next init.
+      }
+    }
+  }
+
   void _onSyncEvent(Map<String, dynamic> e) {
     switch (e['type']) {
       case 'message':
