@@ -530,6 +530,12 @@ class AppState extends ChangeNotifier {
     bool rightsAffirmed = false,
     String scanVerdict = '', // '' | 'borderline' — from the on-device nudity scan
     bool isAiGenerated = false,
+    String visibility = 'public', // 'public' | 'friends' | 'private'
+    bool allowComments = true,
+    String audienceControl = 'everyone', // 'everyone' | '18+'
+    bool tagProducts = false,
+    String coverKey = '',
+    double durationSec = 0,
   }) async {
     if (isDemo) {
       final v = NovaVideo(
@@ -564,6 +570,12 @@ class AppState extends ChangeNotifier {
       'rightsAffirmed': rightsAffirmed,
       'scanVerdict': scanVerdict,
       'is_ai_generated': isAiGenerated,
+      'visibility': visibility,
+      'allowComments': allowComments,
+      'audienceControl': audienceControl,
+      'tagProducts': tagProducts,
+      'coverKey': coverKey,
+      'durationSec': durationSec,
     });
     await loadFeed();
     return '${r['id']}';
@@ -855,9 +867,29 @@ class AppState extends ChangeNotifier {
     return ((r['messages'] as List?) ?? []).map((e) => ChatMessage.fromJson((e as Map).cast<String, dynamic>())).toList();
   }
 
-  Future<void> sendMessage(String peerUid, String text) async {
+  Future<void> sendMessage(String peerUid, String text, {String mediaKey = ''}) async {
     if (isDemo) return;
-    await api.post('/api/threads/$peerUid/messages', {'text': text});
+    await api.post('/api/threads/$peerUid/messages', {'text': text, if (mediaKey.isNotEmpty) 'mediaKey': mediaKey});
+  }
+
+  /// Upload a chat attachment (photo/video) and return the media key.
+  Future<String> uploadChatMedia(String filePath) async {
+    if (isDemo) return 'demo_media_${DateTime.now().millisecondsSinceEpoch}';
+    final r = await api.upload('/api/uploads', filePath);
+    return '${r['key'] ?? r['mediaKey'] ?? r['url'] ?? ''}';
+  }
+
+  /// Start a voice-only call. Returns the call ID.
+  Future<String> startVoiceCall(String peerUid) async {
+    if (isDemo) return 'demo_call_${DateTime.now().millisecondsSinceEpoch}';
+    final r = await api.post('/api/calls/start', {'peerUid': peerUid});
+    return '${r['id'] ?? ''}';
+  }
+
+  /// End a voice call.
+  Future<void> endVoiceCall(String callId) async {
+    if (isDemo) return;
+    await api.post('/api/calls/$callId/finish', {});
   }
 
   // ---------------- blocking ----------------
