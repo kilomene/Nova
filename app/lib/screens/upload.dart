@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 import '../services/api_client.dart';
 import '../services/nudity_scanner.dart';
 import '../state/app_state.dart';
+import '../widgets/ai_badge.dart';
 import 'hashtag.dart';
 
 /// Upload flow: pick a video → preview → caption/hashtags/audio → post.
@@ -30,6 +31,7 @@ class _UploadScreenState extends State<UploadScreen> {
   final _hashtags = TextEditingController();
   String? _audioPath;
   bool _rightsAffirmed = false;
+  bool? _isAiGenerated; // null = unanswered; mandatory before posting.
   bool _posting = false;
   bool _scanning = false;
 
@@ -116,6 +118,11 @@ class _UploadScreenState extends State<UploadScreen> {
             const Text('No licensed music catalog in v1 — bring your own audio. Uploaded audio is attributed to you and reusable by others.',
                 style: TextStyle(color: Colors.white38, fontSize: 11)),
             const SizedBox(height: 8),
+            AiDeclarationToggle(
+              isAiGenerated: _isAiGenerated,
+              onChanged: (v) => setState(() => _isAiGenerated = v),
+            ),
+            const SizedBox(height: 8),
             CheckboxListTile(
               value: _rightsAffirmed,
               onChanged: (v) => setState(() => _rightsAffirmed = v ?? false),
@@ -128,7 +135,7 @@ class _UploadScreenState extends State<UploadScreen> {
             const SizedBox(height: 8),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
-              onPressed: (_filePath == null || _posting || !_rightsAffirmed)
+              onPressed: (_filePath == null || _posting || !_rightsAffirmed || _isAiGenerated == null)
                   ? null
                   : () async {
                       setState(() { _posting = true; _scanning = true; });
@@ -176,6 +183,7 @@ class _UploadScreenState extends State<UploadScreen> {
                               audioKey: _audioPath ?? '',
                               rightsAffirmed: _rightsAffirmed,
                               scanVerdict: scanVerdict,
+                              isAiGenerated: _isAiGenerated ?? false,
                             );
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
