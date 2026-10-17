@@ -61,17 +61,17 @@ class _CoinsScreenState extends State<CoinsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('\$${pkg.usd} USD via Flutterwave (secure checkout).', style: const TextStyle(color: Colors.white70)),
-            const SizedBox(height: 8),
-            TextField(controller: email, style: const TextStyle(color: Colors.white), keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email for receipt', labelStyle: TextStyle(color: Colors.white54))),
+            Text('\$${pkg.usd} USD via Flutterwave (secure checkout).', style: TextStyle(color: Colors.white70)),
+            SizedBox(height: 8),
+            TextField(controller: email, style: TextStyle(color: Colors.white), keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email for receipt', labelStyle: TextStyle(color: Colors.white54))),
             if (state.isDemo)
-              const Padding(padding: EdgeInsets.only(top: 8), child: Text('DEMO: no real payment — coins are credited instantly.', style: TextStyle(color: Colors.amber, fontSize: 12))),
+              Padding(padding: EdgeInsets.only(top: 8), child: Text('DEMO: no real payment — coins are credited instantly.', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12))),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Continue'),
           ),
@@ -91,12 +91,12 @@ class _CoinsScreenState extends State<CoinsScreen> {
         final before = state.coins.balance;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text(
+            content: Text(
                 'Checkout opened — complete the payment in the browser, then return here.'),
-            duration: const Duration(seconds: 8),
+            duration: Duration(seconds: 8),
             action: SnackBarAction(
               label: 'Refresh',
-              textColor: const Color(0xFFFFC107),
+              textColor: Theme.of(context).colorScheme.primary,
               onPressed: () => state.coins.refresh(state.api),
             ),
           ),
@@ -121,9 +121,9 @@ class _CoinsScreenState extends State<CoinsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.all(24),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFFFFD54F), Color(0xFFFF8F00)]),
+                gradient: LinearGradient(colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.primary]),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Column(
@@ -142,11 +142,11 @@ class _CoinsScreenState extends State<CoinsScreen> {
                 color: const Color(0xFF161616),
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
-                  leading: const Text('🪙', style: TextStyle(fontSize: 32)),
-                  title: Text('${p.coins} coins', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  subtitle: const Text('Spend on LIVE gifts & tips', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  leading: Text('🪙', style: TextStyle(fontSize: 32)),
+                  title: Text('${p.coins} coins', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  subtitle: Text('Spend on LIVE gifts & tips', style: TextStyle(color: Colors.white54, fontSize: 12)),
                   trailing: ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+                    style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
                     onPressed: () => _buy(p),
                     child: Text('\$${p.usd}'),
                   ),
@@ -201,19 +201,19 @@ class _VerificationScreenState extends State<VerificationScreen> {
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: const Color(0xFF161616), borderRadius: BorderRadius.circular(12)),
-              child: const Row(
+              decoration: BoxDecoration(color: Color(0xFF161616), borderRadius: BorderRadius.circular(12)),
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Verification', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  Text('\$25 / month', style: TextStyle(color: Color(0xFFFFC107), fontWeight: FontWeight.bold)),
+                  Text('\$25 / month', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: 20),
             if (!state.verificationActive)
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+                style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
                 onPressed: () async {
                   final email = TextEditingController(text: state.auth.email ?? '');
                   final ok = await showDialog<bool>(
@@ -224,14 +224,14 @@ class _VerificationScreenState extends State<VerificationScreen> {
                       content: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text('Secure checkout via Flutterwave.', style: TextStyle(color: Colors.white70)),
-                          TextField(controller: email, style: const TextStyle(color: Colors.white), keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email for receipt', labelStyle: TextStyle(color: Colors.white54))),
-                          if (state.isDemo) const Padding(padding: EdgeInsets.only(top: 8), child: Text('DEMO: no real payment — badge activates instantly.', style: TextStyle(color: Colors.amber, fontSize: 12))),
+                          Text('Secure checkout via Flutterwave.', style: TextStyle(color: Colors.white70)),
+                          TextField(controller: email, style: TextStyle(color: Colors.white), keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email for receipt', labelStyle: TextStyle(color: Colors.white54))),
+                          if (state.isDemo) Padding(padding: EdgeInsets.only(top: 8), child: Text('DEMO: no real payment — badge activates instantly.', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12))),
                         ],
                       ),
                       actions: [
-                        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-                        ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black), onPressed: () => Navigator.of(context).pop(true), child: const Text('Continue')),
+                        TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text('Cancel')),
+                        ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black), onPressed: () => Navigator.of(context).pop(true), child: Text('Continue')),
                       ],
                     ),
                   );
