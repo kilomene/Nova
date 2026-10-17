@@ -60,7 +60,7 @@ class _LiveListScreenState extends State<LiveListScreen> {
         Navigator.of(context).push(MaterialPageRoute(builder: (_) => LiveRoomScreen(sessionId: id, isBroadcaster: true, title: title.text.trim())));
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e is ApiException ? e.message : 'Could not go live: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e is ApiException ? e.message : 'Could not go live. Please try again.')));
     }
   }
 
@@ -202,7 +202,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
         if (mounted && _fx.isNotEmpty) setState(() => _fx.removeAt(0));
       });
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e is ApiException ? e.message : 'Gift failed: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e is ApiException ? e.message : 'Gift failed. Please try again.')));
     }
   }
 
