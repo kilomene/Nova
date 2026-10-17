@@ -161,7 +161,7 @@ class _NetworkBlockedScreenState extends State<NetworkBlockedScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+                style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
                 onPressed: _checking ? null : _retry,
                 child: Text(_checking ? 'Checking…' : 'Retry'),
               ),
@@ -355,13 +355,21 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _doTotpChallenge(AppState state, String identifier) async {
     // After Firebase sign-in, check if TOTP is required.
+    // Fail CLOSED: if we cannot determine the 2FA status, do not silently
+    // skip the challenge — that would let an attacker with a stolen password
+    // bypass 2FA by blocking this one request.
     try {
       final r = await state.api.post('/api/auth/resolve', {'identifier': identifier});
       if ((r['totpRequired'] as bool?) == true) {
         setState(() => _step = _AuthStep.totp);
         return;
       }
-    } catch (_) {}
+    } catch (e) {
+      setState(() => _error = e is ApiException
+          ? e.message
+          : 'Could not verify two-factor status. Check your connection and try again.');
+      return;
+    }
     await _finish(state);
   }
 
@@ -377,10 +385,17 @@ class _AuthScreenState extends State<AuthScreen> {
     });
     try {
       if (!_gsiInitialized) {
-        await GoogleSignIn.instance.initialize();
+        // Timeout after 10s — initialize() can hang silently on misconfiguration
+        await GoogleSignIn.instance.initialize().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => throw Exception('Google Sign-In timed out. Please check your internet connection and try again.'),
+        );
         _gsiInitialized = true;
       }
-      final account = await GoogleSignIn.instance.authenticate();
+      final account = await GoogleSignIn.instance.authenticate().timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw Exception('Google Sign-In timed out. Please try again.'),
+      );
       final credential = GoogleAuthProvider.credential(
         idToken: account.authentication.idToken,
       );
@@ -534,7 +549,7 @@ class _AuthScreenState extends State<AuthScreen> {
           Text(
             widget.notice!,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFFFFC107), fontWeight: FontWeight.w600),
+            style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600),
           ),
         ],
         const SizedBox(height: 10),
@@ -564,7 +579,7 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
         const SizedBox(height: 12),
         _optionRow(
-          icon: const Icon(Icons.person_outline, color: Color(0xFFFFC107)),
+          icon: Icon(Icons.person_outline, color: Theme.of(context).colorScheme.primary),
           label: 'Continue with username',
           onTap: () => setState(() {
             _useUsername = true;
@@ -697,7 +712,7 @@ class _AuthScreenState extends State<AuthScreen> {
       height: 52,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFFFFC107),
+          backgroundColor: Theme.of(context).colorScheme.primary,
           foregroundColor: Colors.black,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
@@ -741,7 +756,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _legalSmallPrint() {
-    const gold = Color(0xFFFFC107);
+    final gold = Theme.of(context).colorScheme.primary;
     return RichText(
       textAlign: TextAlign.center,
       text: TextSpan(
@@ -750,13 +765,13 @@ class _AuthScreenState extends State<AuthScreen> {
           const TextSpan(text: 'By continuing, you agree to our '),
           TextSpan(
             text: 'Terms of Service',
-            style: const TextStyle(color: gold, decoration: TextDecoration.underline),
+            style: TextStyle(color: gold, decoration: TextDecoration.underline),
             recognizer: TapGestureRecognizer()..onTap = () => _openLegal(0),
           ),
           const TextSpan(text: ' and acknowledge our '),
           TextSpan(
             text: 'Privacy Policy',
-            style: const TextStyle(color: gold, decoration: TextDecoration.underline),
+            style: TextStyle(color: gold, decoration: TextDecoration.underline),
             recognizer: TapGestureRecognizer()..onTap = () => _openLegal(1),
           ),
           const TextSpan(text: '.'),
@@ -785,7 +800,7 @@ class _AuthScreenState extends State<AuthScreen> {
               child: Text(
                 _signup ? 'Log in' : 'Sign up',
                 style: const TextStyle(
-                    color: Color(0xFFFFC107), fontSize: 14, fontWeight: FontWeight.bold),
+                    color: Theme.of(context).colorScheme.primary, fontSize: 14, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -842,7 +857,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(Icons.lock_outline, size: 56, color: Color(0xFFFFC107)),
+            Icon(Icons.lock_outline, size: 56, color: Theme.of(context).colorScheme.primary),
             const SizedBox(height: 16),
             const Text('Your wallet PIN encrypts your keys on this device.',
                 style: TextStyle(color: Colors.white, fontSize: 16)),
@@ -874,7 +889,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
             ],
             const SizedBox(height: 24),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107), foregroundColor: Colors.black),
+              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
               onPressed: _busy
                   ? null
                   : () async {
