@@ -1,4 +1,4 @@
-import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -72,11 +72,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   /// notifyListeners (this screen watches AppState).
   Future<void> _pickPhoto() async {
     final state = context.read<AppState>();
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      allowMultiple: false,
-    );
-    final path = result?.files.single.path;
+    final result = await ImagePicker().pickImage(source: ImageSource.gallery);
+    final path = result?.path;
     if (path == null || path.isEmpty) return; // user cancelled
     setState(() => _uploadingPhoto = true);
     try {
@@ -230,13 +227,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text('nova-api.ayiijumo.workers.dev/@${_username.text}',
+                  child: Text('user.novamail.store/${_username.text}',
                       style: TextStyle(color: sub, fontSize: 13)),
                 ),
                 TextButton.icon(
                   onPressed: () async {
                     await Clipboard.setData(ClipboardData(
-                        text: 'https://nova-api.ayiijumo.workers.dev/@${_username.text}'));
+                        text: 'https://user.novamail.store/${_username.text}'));
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
