@@ -116,6 +116,48 @@ class WalletService {
     }
   }
 
+  /// Change the wallet PIN: verifies [oldPin], then re-encrypts the keystore
+  /// with [newPin] and saves the new bundle (server + local).
+  /// Throws [WalletException] on wrong old PIN or invalid new PIN.
+  Future<void> changePin({
+    required String oldPin,
+    required String newPin,
+    required ApiClient api,
+  }) async {
+    KeystoreCrypto.validatePin(newPin);
+    // Decrypt with old PIN to get the mnemonic (throws if wrong).
+    KeystoreBundle? bundle;
+    if (api.isDemo) {
+      bundle = await _localBundle();
+    } else {
+      final r = await api.get('/api/keystore');
+      final b = r['bundle'];
+      if (b is Map<String, dynamic>) bundle = KeystoreBundle.fromJson(b);
+    }
+    if (bundle == null) throw WalletException('no_wallet');
+    String mnemonic;
+    try {
+      mnemonic = await KeystoreCrypto.decrypt(bundle: bundle, pin: oldPin);
+    } catch (_) {
+      throw WalletException('incorrect_pin');
+    }
+    // Re-encrypt with the new PIN (fresh salt/nonce).
+    final newBundle = await KeystoreCrypto.encrypt(
+      mnemonic: mnemonic,
+      pin: newPin,
+      evmAddress: bundle.evmAddress,
+      btcAddress: bundle.btcAddress,
+    );
+    if (api.isDemo) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefsKey, _bundleToString(newBundle));
+    } else {
+      await api.post('/api/keystore', {'bundle': newBundle.toJson()});
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefsKey, _bundleToString(newBundle));
+    }
+  }
+
   /// EVM balance on Sepolia (testnet). Returns ETH as a decimal string.
   Future<String> evmBalance() async {
     if (evmAddress == null) throw WalletException('no_wallet');
