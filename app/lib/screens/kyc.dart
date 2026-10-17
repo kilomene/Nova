@@ -1,4 +1,4 @@
-import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -21,8 +21,8 @@ class _KycScreenState extends State<KycScreen> {
   bool _busy = false;
 
   Future<void> _pick(void Function(String) set) async {
-    final r = await FilePicker.platform.pickFiles(type: FileType.image);
-    if (r?.files.single.path != null) setState(() => set(r!.files.single.path!));
+    final r = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (r?.path != null) setState(() => set(r!.path));
   }
 
   @override
