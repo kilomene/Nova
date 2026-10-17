@@ -23,4 +23,12 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.4.0" apply false
 }
 
+dependencyResolutionManagement {
+    repositories {
+        mavenLocal()
+        maven("https://dl.google.com/dl/android/maven2/")
+        mavenCentral()
+    }
+}
+
 include(":app")
