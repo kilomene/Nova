@@ -83,6 +83,7 @@ class NovaVideo {
   bool likedByMe;
   final bool isVerified;
   final bool promoted;
+  final bool isAiGenerated;
 
   NovaVideo({
     required this.id,
@@ -103,6 +104,7 @@ class NovaVideo {
     this.likedByMe = false,
     this.isVerified = false,
     this.promoted = false,
+    this.isAiGenerated = false,
   });
 
   factory NovaVideo.fromJson(Map<String, dynamic> j) {
@@ -135,6 +137,7 @@ class NovaVideo {
       createdAt: (j['created_at'] ?? j['createdAt'] ?? 0) as int,
       isVerified: (j['is_verified'] ?? j['isVerified'] ?? false) == true,
       promoted: (j['promoted'] ?? false) == true,
+      isAiGenerated: (j['is_ai_generated'] ?? j['isAiGenerated'] ?? false) == true,
     );
   }
 }
