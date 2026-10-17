@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
+import '../services/api_client.dart';
 import '../services/nudity_scanner.dart';
 import '../state/app_state.dart';
 import 'hashtag.dart';
@@ -192,7 +193,10 @@ class _UploadScreenState extends State<UploadScreen> {
                           _preview = null;
                         }
                       } catch (e) {
-                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+                        // Never show raw exception text (e.g. ApiException(401,
+                        // missing_bearer_token)) — ApiException.message is human.
+                        final msg = e is ApiException ? e.message : 'Upload failed. Please try again.';
+                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
                       } finally {
                         if (mounted) setState(() { _posting = false; _scanning = false; });
                       }
