@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS videos (
   share_count INTEGER NOT NULL DEFAULT 0,
   view_count INTEGER NOT NULL DEFAULT 0,
   visibility TEXT NOT NULL DEFAULT 'public',
+  is_ai_generated INTEGER NOT NULL DEFAULT 0, -- uploader declaration (mandatory toggle ships with the premium upload redesign)
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_videos_uid ON videos(uid);
