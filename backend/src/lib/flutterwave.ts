@@ -1,7 +1,8 @@
 // Flutterwave v3 server-side integration. The secret key lives ONLY in the
 // Workers secret FLUTTERWAVE_SECRET_KEY. The app never sees it and we never
 // use Flutterwave "payment links" — the app drives its own checkout UI and
-// calls /api/payments/charge, which calls Flutterwave directly.
+// calls /api/coins/buy (or /api/payments/charge), which calls Flutterwave
+// directly and hands the hosted-checkout link back to the app.
 import { httpError } from './auth';
 
 const FW_BASE = 'https://api.flutterwave.com/v3';
@@ -13,9 +14,18 @@ export interface ChargeInput {
   tx_ref: string;
   name?: string;
   phone?: string;
+  /** Where Flutterwave sends the payer after checkout. Defaults to a placeholder. */
+  redirectUrl?: string;
 }
 
-export async function flutterwaveCharge(secretKey: string | undefined, input: ChargeInput) {
+interface FwChargeBody {
+  status?: string;
+  message?: string;
+  data?: { link?: string; [k: string]: unknown };
+  [k: string]: unknown;
+}
+
+export async function flutterwaveCharge(secretKey: string | undefined, input: ChargeInput): Promise<FwChargeBody> {
   if (!secretKey) throw httpError(501, 'payments_not_configured: set FLUTTERWAVE_SECRET_KEY (see docs/SETUP.md)');
   const res = await fetch(`${FW_BASE}/payments`, {
     method: 'POST',
@@ -27,14 +37,26 @@ export async function flutterwaveCharge(secretKey: string | undefined, input: Ch
       tx_ref: input.tx_ref,
       amount: input.amount,
       currency: input.currency,
-      redirect_url: 'https://nova.example/payments/callback', // informational; app uses its own flow
+      redirect_url: input.redirectUrl || 'https://nova.example/payments/callback', // informational; app uses its own flow
       customer: { email: input.email, name: input.name, phonenumber: input.phone },
       customizations: { title: 'Nova', description: 'Nova wallet top-up' },
     }),
   });
-  const data = (await res.json()) as Record<string, unknown>;
-  if (!res.ok) throw httpError(502, `flutterwave_error: ${JSON.stringify(data).slice(0, 300)}`);
+  const data = (await res.json()) as FwChargeBody;
+  // Flutterwave can answer HTTP 200 with status:"error" in the body, so the
+  // HTTP status alone is not enough — require an explicit success + link.
+  if (!res.ok || data.status !== 'success' || !data.data?.link) {
+    console.error('flutterwave charge failed', JSON.stringify({ http: res.status, body: data }).slice(0, 500));
+    throw httpError(502, 'checkout_unavailable');
+  }
   return data;
+}
+
+/** Pull the hosted-checkout link out of a validated charge response. */
+export function checkoutLink(data: FwChargeBody): string {
+  const link = data.data?.link;
+  if (typeof link !== 'string' || !link.startsWith('http')) throw httpError(502, 'checkout_unavailable');
+  return link;
 }
 
 export async function flutterwaveVerify(secretKey: string | undefined, txId: string | number) {
