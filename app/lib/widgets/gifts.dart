@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 /// Verification badge shown next to verified handles.
-/// type: 'personal' (blue, Facebook-style) | 'business' (pink).
+/// type: 'personal' (blue) | 'business' (pink) | 'company' (gold).
 class VerifiedBadge extends StatelessWidget {
   final double size;
   final String type;
@@ -11,9 +11,11 @@ class VerifiedBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = type == 'business'
-        ? const Color(0xFFFF2E63) // pink — business verification
-        : const Color(0xFF20D5EC); // blue — personal verification
+    final color = switch (type) {
+      'business' => const Color(0xFFFF2E63), // pink — business verification ($65/mo)
+      'company' => Color(0xFFD4AF37), // gold — company verification ($100/mo)
+      _ => const Color(0xFF20D5EC), // blue — personal verification
+    };
     return Icon(Icons.verified, size: size, color: color);
   }
 }
