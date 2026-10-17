@@ -41,7 +41,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       appBar: AppBar(backgroundColor: bg, title: Text('Marketplace', style: TextStyle(color: fg))),
       floatingActionButton: FloatingActionButton(
         backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.black,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         child: const Icon(Icons.add),
         // Strict seller onboarding: only verified sellers may list.
         onPressed: () {
@@ -210,7 +210,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
+                      style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
                       onPressed: () async {
                         try {
                           final r = await state.createOrder(listingId: listing.id, paymentMethod: _payMethod);
@@ -291,7 +291,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
             TextField(controller: TextEditingController(text: _category), style: TextStyle(color: fg), decoration: InputDecoration(labelText: 'Category', labelStyle: TextStyle(color: sub)), onChanged: (v) => _category = v),
             SizedBox(height: 20),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
+              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
               onPressed: _busy
                   ? null
                   : () async {
