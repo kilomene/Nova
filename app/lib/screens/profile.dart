@@ -8,9 +8,10 @@ import '../utils/format.dart';
 import '../widgets/ai_badge.dart';
 import '../widgets/gifts.dart';
 import 'inbox.dart';
+import 'edit_profile.dart';
 import 'monetization.dart';
+import 'profile_menu.dart';
 import 'report.dart';
-import 'settings.dart';
 import 'wallet.dart';
 
 /// TikTok-style profile in Nova's dark+gold premium skin.
@@ -156,7 +157,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               icon: Icon(Icons.menu, color: fg),
               tooltip: 'Menu',
               onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsScreen())),
+                  MaterialPageRoute(builder: (_) => const ProfileMenuScreen())),
             ),
           ],
           if (!widget.self)
@@ -374,7 +375,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     onTap: () => Navigator.of(context).push(
                                         MaterialPageRoute(
                                             builder: (_) =>
-                                                const SettingsScreen())))),
+                                                const EditProfileScreen())))),
                             const SizedBox(width: 10),
                             Expanded(
                                 child: _OutlineButton(
