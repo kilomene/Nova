@@ -176,7 +176,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                     onPressed: _buying ? null : _buy,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFFFC107),
-                      foregroundColor: Colors.black,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     child: _buying
