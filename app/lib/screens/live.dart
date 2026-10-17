@@ -313,11 +313,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                           },
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       GestureDetector(
                         onTap: _giftFlow,
                         child: Container(
-                          padding: const EdgeInsets.all(10),
+                          padding: EdgeInsets.all(10),
                           decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, borderRadius: BorderRadius.circular(24)),
                           child: const Text('🎁', style: TextStyle(fontSize: 20)),
                         ),
