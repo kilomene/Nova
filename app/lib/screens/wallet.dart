@@ -241,7 +241,7 @@ class _WalletScreenState extends State<WalletScreen> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                   backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Colors.black),
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary),
               onPressed: () async {
                 await Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const KycScreen()));
@@ -255,7 +255,7 @@ class _WalletScreenState extends State<WalletScreen> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                   backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Colors.black),
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary),
               onPressed: () async {
                 final ok = await Navigator.of(context).push(
                     MaterialPageRoute(
@@ -870,7 +870,7 @@ class _SendDetailsScreenState extends State<SendDetailsScreen> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: gold,
-                foregroundColor: Colors.black,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
