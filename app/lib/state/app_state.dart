@@ -337,6 +337,7 @@ class AppState extends ChangeNotifier {
     String audioKey = '',
     bool rightsAffirmed = false,
     String scanVerdict = '', // '' | 'borderline' — from the on-device nudity scan
+    bool isAiGenerated = false,
   }) async {
     if (isDemo) {
       final v = NovaVideo(
@@ -350,6 +351,7 @@ class AppState extends ChangeNotifier {
         soundLabel: soundLabel,
         audioKey: audioKey,
         createdAt: DateTime.now().millisecondsSinceEpoch,
+        isAiGenerated: isAiGenerated,
       );
       feed.insert(0, v);
       notifyListeners();
@@ -369,6 +371,7 @@ class AppState extends ChangeNotifier {
       'audioKey': uploadedAudioKey ?? '',
       'rightsAffirmed': rightsAffirmed,
       'scanVerdict': scanVerdict,
+      'is_ai_generated': isAiGenerated,
     });
     await loadFeed();
     return '${r['id']}';
