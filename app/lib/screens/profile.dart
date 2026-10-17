@@ -135,7 +135,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               icon: Icon(Icons.share_outlined, color: fg),
               tooltip: 'Share profile',
               onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: 'https://nova-api.ayiijumo.workers.dev/@${u.handle}'));
+                await Clipboard.setData(ClipboardData(text: 'https://user.novamail.store/${u.handle}'));
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Profile link copied')));
@@ -163,7 +163,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               tooltip: 'Share profile',
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(
-                    text: 'https://nova-api.ayiijumo.workers.dev/@${u.handle}'));
+                    text: 'https://user.novamail.store/${u.handle}'));
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Profile link copied')));
@@ -217,9 +217,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                       Positioned(
                         bottom: 0,
                         child: GestureDetector(
-                          onTap: () async {
-                            await state.toggleFollow(u.uid);
+                          onTap: () {
+                            // Optimistic UI: update immediately, sync in background.
                             setState(() => _isFollowing = true);
+                            state.toggleFollow(u.uid);
                           },
                           child: Container(
                             width: 26,
@@ -362,17 +363,19 @@ class _ProfileScreenState extends State<ProfileScreen>
                                     ? _OutlineButton(
                                         label: 'Following',
                                         isDark: isDark,
-                                        onTap: () async {
-                                          await state.toggleFollow(u.uid);
+                                        onTap: () {
+                                          // Optimistic UI: update immediately.
                                           setState(
                                               () => _isFollowing = false);
+                                          state.toggleFollow(u.uid);
                                         })
                                     : _GoldButton(
                                         label: 'Follow',
-                                        onTap: () async {
-                                          await state.toggleFollow(u.uid);
+                                        onTap: () {
+                                          // Optimistic UI: update immediately.
                                           setState(
                                               () => _isFollowing = true);
+                                          state.toggleFollow(u.uid);
                                         })),
                             const SizedBox(width: 10),
                             Expanded(
@@ -383,7 +386,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                                         MaterialPageRoute(
                                             builder: (_) => ChatScreen(
                                                 peerUid: u.uid,
-                                                peerHandle: u.handle))))),
+                                                peerHandle: u.handle,
+                                                peerName: u.displayName,
+                                                peerAvatar: u.avatarUrl))))),
                           ],
                         ),
                 ),
