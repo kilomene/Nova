@@ -600,11 +600,36 @@ class AppState extends ChangeNotifier {
     return (r['entries'] as List? ?? []).map((e) => (e as Map).cast<String, dynamic>()).toList();
   }
 
-  /// Request a USD payout of creator earnings. v1: recorded for manual
-  /// processing (actual Flutterwave transfer = phase 2).
-  Future<Map<String, dynamic>> requestPayout({required int amountCoins, required String destination}) async {
+  /// List banks for a payout country via Flutterwave.
+  Future<List<Map<String, dynamic>>> earningsBanks(String country) async {
+    if (isDemo) return [];
+    final r = await api.get('/api/earnings/banks?country=$country');
+    return ((r['banks'] as List?) ?? []).map((b) => (b as Map).cast<String, dynamic>()).toList();
+  }
+
+  /// Payout history (Flutterwave bank transfers).
+  Future<List<Map<String, dynamic>>> earningsPayouts() async {
+    if (isDemo) return [];
+    final r = await api.get('/api/earnings/payouts');
+    return ((r['payouts'] as List?) ?? []).map((p) => (p as Map).cast<String, dynamic>()).toList();
+  }
+
+  /// Send creator earnings to a bank account via Flutterwave transfer.
+  Future<Map<String, dynamic>> sendPayout({
+    required int amountCoins,
+    required String country,
+    required String bankCode,
+    required String bankName,
+    required String accountNumber,
+  }) async {
     if (isDemo) throw ApiException(400, 'demo_mode');
-    final r = await api.post('/api/earnings/payout', {'amountCoins': amountCoins, 'destination': destination});
+    final r = await api.post('/api/earnings/payout', {
+      'amountCoins': amountCoins,
+      'country': country,
+      'bankCode': bankCode,
+      'bankName': bankName,
+      'accountNumber': accountNumber,
+    });
     await refreshEarnings();
     return r;
   }
