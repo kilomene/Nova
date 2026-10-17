@@ -308,6 +308,30 @@ export default {
         }
       }
 
+      // ---------- share links (public, no auth) ----------
+      {
+        const vm = path.match(/^\/v\/([A-Za-z0-9_-]+)$/);
+        if (vm && method === 'GET') {
+          const vid = vm[1];
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nova Video</title><style>body{background:#000;color:#fff;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0}img{width:120px;height:120px;border-radius:24px}a{background:#fff;color:#000;padding:14px 32px;border-radius:12px;text-decoration:none;font-weight:700;margin-top:24px}</style></head><body><img src="/avatars/nova-logo.png" alt="Nova"><h2>Watch on Nova</h2><p>Video ${vid}</p><a href="nova://v/${vid}">Open in Nova App</a></body></html>`;
+          return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+        }
+        const um = path.match(/^\/@([A-Za-z0-9_.-]+)$/) || path.match(/^\/([A-Za-z0-9_.-]+)$/);
+        if (um && method === 'GET') {
+          const handle = um[1];
+          // Skip reserved paths - let them fall through to other handlers
+          if (['api', 'avatars', 'media', 'v'].includes(handle)) {
+            // do nothing, fall through
+          } else {
+          const row = await env.DB.prepare('SELECT display_name, avatar_url FROM users WHERE handle = ? OR username = ?').bind(handle, handle).first<{ display_name: string; avatar_url: string }>();
+          const name = row?.display_name || ('@' + handle);
+          const avatar = row?.avatar_url || '/avatars/nova-logo.png';
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name} on Nova</title><style>body{background:#000;color:#fff;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0}img{width:120px;height:120px;border-radius:60px}a{background:#fff;color:#000;padding:14px 32px;border-radius:12px;text-decoration:none;font-weight:700;margin-top:24px}</style></head><body><img src="${avatar}" alt="${name}"><h2>${name}</h2><p>@${handle}</p><a href="nova://@${handle}">Open in Nova App</a></body></html>`;
+          return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+          }
+        }
+      }
+
       // ---------- signed media serving ----------
       {
         const m = path.match(/^\/media\/(.+)$/);
@@ -1075,10 +1099,11 @@ export default {
         const m = path.match(/^\/api\/threads\/([^/]+)\/messages$/);
         if (m && method === 'GET') {
           const uid = await guard(request, env);
-          void uid; // auth enforced by guard; thread access is by unguessable id
+          const peerId = vStr(m[1], 'peer', 1, 128);
+          const tid = threadId(uid, peerId);
           const cursor = vNum(url.searchParams.get('cursor') || Date.now(), 'cursor', 1, 4102444800000);
           const rows = await env.DB.prepare('SELECT * FROM messages WHERE thread_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT 50')
-            .bind(m[1], cursor)
+            .bind(tid, cursor)
             .all();
           return json({ messages: (rows.results as unknown[]).reverse() });
         }
