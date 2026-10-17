@@ -6,12 +6,11 @@ import '../models.dart';
 import '../state/app_state.dart';
 import '../utils/format.dart';
 import '../widgets/ai_badge.dart';
-import '../widgets/gifts.dart';
+import 'follow_list.dart';
 import 'inbox.dart';
 import 'edit_profile.dart';
 import 'monetization.dart';
 import 'profile_menu.dart';
-import 'report.dart';
 import 'wallet.dart';
 
 /// TikTok-style profile in Nova's dark+gold premium skin.
@@ -121,17 +120,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 onPressed: () => Navigator.of(context).pop(),
               ),
         centerTitle: true,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('@${u.handle}',
-                style: TextStyle(color: fg, fontSize: 17, fontWeight: FontWeight.w700)),
-            if (u.isVerified) ...[
-              const SizedBox(width: 5),
-              const VerifiedBadge(size: 16)
-            ],
-          ],
-        ),
+        title: null,
         actions: [
           if (widget.self) ...[
             IconButton(
@@ -146,7 +135,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               icon: Icon(Icons.share_outlined, color: fg),
               tooltip: 'Share profile',
               onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: 'https://nova.app/@${u.handle}'));
+                await Clipboard.setData(ClipboardData(text: 'https://nova-api.ayiijumo.workers.dev/@${u.handle}'));
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Profile link copied')));
@@ -160,58 +149,28 @@ class _ProfileScreenState extends State<ProfileScreen>
                   MaterialPageRoute(builder: (_) => const ProfileMenuScreen())),
             ),
           ],
-          if (!widget.self)
+          if (!widget.self) ...[
             IconButton(
-              icon: Icon(Icons.flag_outlined, color: fg),
-              onPressed: () =>
-                  showReportDialog(context, targetType: 'user', targetId: u.uid),
+              icon: Icon(Icons.notifications_outlined, color: fg),
+              tooltip: 'Notifications',
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Notifications — coming soon')));
+              },
             ),
-          if (!widget.self)
-            PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert, color: fg),
-              color: isDark ? const Color(0xFF1a1a1a) : Colors.white,
-              onSelected: (v) async {
-                if (v == 'block') {
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      backgroundColor: isDark ? const Color(0xFF1a1a1a) : Colors.white,
-                      title: Text('Block @${u.handle}?',
-                          style: TextStyle(color: fg)),
-                      content: Text(
-                          'They will not be able to see your content, profile, or messages until you unblock them.',
-                          style: TextStyle(color: sub)),
-                      actions: [
-                        TextButton(
-                            onPressed: () => Navigator.of(context).pop(false),
-                            child: const Text('Cancel')),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.redAccent,
-                              foregroundColor: Colors.white),
-                          onPressed: () => Navigator.of(context).pop(true),
-                          child: const Text('Block'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (ok == true && context.mounted) {
-                    await state.blockUser(u.uid);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('@${u.handle} blocked.')));
-                      Navigator.of(context).pop();
-                    }
-                  }
+            IconButton(
+              icon: Icon(Icons.share_outlined, color: fg),
+              tooltip: 'Share profile',
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(
+                    text: 'https://nova-api.ayiijumo.workers.dev/@${u.handle}'));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Profile link copied')));
                 }
               },
-              itemBuilder: (context) => const [
-                PopupMenuItem(
-                    value: 'block',
-                    child: Text('Block user',
-                        style: TextStyle(color: Colors.redAccent))),
-              ],
             ),
+          ],
         ],
       ),
       body: NestedScrollView(
@@ -327,6 +286,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
                 const SizedBox(height: 10),
                 // Following / Followers / Likes — TikTok compact counts.
+                // Following & Followers open the user list screen.
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -334,26 +294,32 @@ class _ProfileScreenState extends State<ProfileScreen>
                         n: formatCount(_following),
                         label: 'Following',
                         fg: fg,
-                        sub: sub),
+                        sub: sub,
+                        onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => FollowListScreen(
+                                    uidOrHandle: u.uid.isNotEmpty
+                                        ? u.uid
+                                        : u.handle,
+                                    handle: u.handle,
+                                    followers: false)))),
                     _Stat(
                         n: formatCount(_followers),
                         label: 'Followers',
                         fg: fg,
-                        sub: sub),
+                        sub: sub,
+                        onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => FollowListScreen(
+                                    uidOrHandle: u.uid.isNotEmpty
+                                        ? u.uid
+                                        : u.handle,
+                                    handle: u.handle,
+                                    followers: true)))),
                     _Stat(
                         n: formatCount(_likes), label: 'Likes', fg: fg, sub: sub),
                   ],
                 ),
-                if (u.bio.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 40, vertical: 8),
-                    child: Text(u.bio,
-                        style: TextStyle(color: sub, fontSize: 13),
-                        textAlign: TextAlign.center,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis),
-                  ),
                 if (u.traderScore > 0)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
@@ -445,6 +411,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                     ],
                   ),
                 ],
+                // Bio below buttons (TikTok layout).
+                if (u.bio.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 40, vertical: 8),
+                    child: Text(u.bio,
+                        style: TextStyle(color: sub, fontSize: 13),
+                        textAlign: TextAlign.center,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis),
+                  ),
                 const SizedBox(height: 8),
               ],
             ),
@@ -542,12 +519,17 @@ class _Stat extends StatelessWidget {
   final String label;
   final Color fg;
   final Color sub;
+  final VoidCallback? onTap;
   const _Stat(
-      {required this.n, required this.label, required this.fg, required this.sub});
+      {required this.n,
+      required this.label,
+      required this.fg,
+      required this.sub,
+      this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    final body = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         children: [
@@ -559,6 +541,8 @@ class _Stat extends StatelessWidget {
         ],
       ),
     );
+    if (onTap == null) return body;
+    return GestureDetector(onTap: onTap, behavior: HitTestBehavior.opaque, child: body);
   }
 }
 
