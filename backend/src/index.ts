@@ -219,6 +219,25 @@ async function ensureInboxTables(db: D1Database): Promise<void> {
   inboxTablesEnsured = true;
 }
 
+// X-style company affiliations: a gold-badge company can mark users as its
+// affiliates (employees, sub-brands). Only the COMPANY can create these —
+// users can never self-affiliate (scam prevention). One company per user.
+let affiliationsEnsured = false;
+async function ensureAffiliationsTable(db: D1Database): Promise<void> {
+  if (affiliationsEnsured) return;
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS affiliations (
+      id TEXT PRIMARY KEY,
+      company_uid TEXT NOT NULL,
+      user_uid TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE (user_uid)
+    )`),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_affiliations_company ON affiliations(company_uid)'),
+  ]);
+  affiliationsEnsured = true;
+}
+
 // coin_purchases maps each Flutterwave tx_ref to its buyer + package so the
 // webhook/callback settler never has to parse underscores out of tx_refs
 // (package ids like "coins_500" contain them). Same deploy-safety pattern.
@@ -337,6 +356,28 @@ async function verificationTier(db: D1Database, uid: string): Promise<string | n
   return r?.tier || null;
 }
 
+/// X-style affiliation: returns the company (gold badge) the user is
+/// affiliated with, or null. Used to render the company logo badge next to
+/// the user's name, like X's organization affiliation.
+async function affiliationFor(db: D1Database, uid: string): Promise<{ uid: string; handle: string; display_name: string; avatar_url: string } | null> {
+  const r = await db.prepare(
+    `SELECT u.uid, u.handle, u.display_name, u.avatar_url
+     FROM affiliations a JOIN users u ON u.uid = a.company_uid
+     WHERE a.user_uid = ?`
+  ).bind(uid).first<{ uid: string; handle: string; display_name: string; avatar_url: string }>();
+  return r ?? null;
+}
+
+/// Caller must hold a company (gold) verification badge to manage affiliations.
+/// Users can never affiliate themselves — only the company can grant it.
+async function requireCompany(db: D1Database, uid: string): Promise<void> {
+  const row = await db.prepare(
+    'SELECT verification_type, is_official FROM users WHERE uid = ?'
+  ).bind(uid).first<{ verification_type: string; is_official: number }>();
+  const vtype = ((row?.verification_type as string) || '').toLowerCase();
+  if (vtype !== 'company' && !row?.is_official) throw httpError(403, 'company_required');
+}
+
 // Reputation from real transactions (pillar 5). Review count + average rating
 // feed the seller's trust score, which drives marketplace search ranking,
 // featured/popular-seller placement, and badges.
@@ -381,6 +422,7 @@ interface PublicUser {
   created_at: number;
   is_verified: boolean;
   verification_type: string; // 'personal' | 'business' | ''
+  affiliated_with: { uid: string; handle: string; display_name: string; avatar_url: string } | null;
 }
 
 async function publicUser(db: D1Database, uidOrHandle: string): Promise<PublicUser | null> {
@@ -415,6 +457,7 @@ async function publicUser(db: D1Database, uidOrHandle: string): Promise<PublicUs
     created_at: (row.created_at as number) || 0,
     is_verified: verified,
     verification_type: vtype,
+    affiliated_with: await affiliationFor(db, uid),
   };
 }
 
@@ -1188,7 +1231,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         ).all();
         const out = [];
         for (const r of rows.results as Record<string, unknown>[]) {
-          out.push({ ...r, is_verified: await isVerified(env.DB, r.uid as string) });
+          out.push({ ...r, is_verified: await isVerified(env.DB, r.uid as string), affiliated_with: await affiliationFor(env.DB, r.uid as string) });
         }
         return json({ sessions: out });
       }
@@ -1366,6 +1409,63 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         return json({ checkoutUrl: checkoutLink(data), txRef, tier, months, price_usd: price });
       }
 
+      // ---------- affiliations (X-style company affiliation) ----------
+      // Only a gold-badge company can affiliate users. Users can NEVER
+      // affiliate themselves — the company grants it (scam prevention).
+      if (path === '/api/affiliations' && method === 'GET') {
+        const uid = await guard(request, env);
+        await ensureAffiliationsTable(env.DB);
+        // ?company=<uid|handle> → public list of that company's affiliates.
+        // No param → the caller's own affiliates (company only).
+        const companyParam = (url.searchParams.get('company') || '').trim();
+        let companyUid = uid;
+        if (companyParam) {
+          const c = await env.DB.prepare(
+            'SELECT uid FROM users WHERE uid = ? OR handle = ?'
+          ).bind(companyParam, companyParam).first<{ uid: string }>();
+          if (!c) throw httpError(404, 'company_not_found');
+          companyUid = c.uid;
+        } else {
+          await requireCompany(env.DB, uid);
+        }
+        const rows = await env.DB.prepare(
+          `SELECT u.uid, u.handle, u.display_name, u.avatar_url, u.verification_type, a.created_at
+           FROM affiliations a JOIN users u ON u.uid = a.user_uid
+           WHERE a.company_uid = ? ORDER BY a.created_at DESC LIMIT 100`
+        ).bind(companyUid).all();
+        return json({ affiliates: rows.results });
+      }
+      if (path === '/api/affiliations' && method === 'POST') {
+        const uid = await guard(request, env, 30);
+        await ensureAffiliationsTable(env.DB);
+        await requireCompany(env.DB, uid);
+        const b = await readJson(request) as Record<string, unknown>;
+        const target = vStr(b.user_uid ?? b.handle, 'user_uid', 1, 64);
+        const userRow = await env.DB.prepare(
+          'SELECT uid, handle, status FROM users WHERE uid = ? OR handle = ?'
+        ).bind(target, target).first<{ uid: string; handle: string; status: string }>();
+        if (!userRow) throw httpError(404, 'user_not_found');
+        if (userRow.uid === uid) throw httpError(400, 'cannot_affiliate_self');
+        if (userRow.status !== 'active') throw httpError(400, 'user_not_active');
+        await env.DB.prepare(
+          'INSERT OR IGNORE INTO affiliations (id, company_uid, user_uid, created_at) VALUES (?, ?, ?, ?)'
+        ).bind(newId(), uid, userRow.uid, now()).run();
+        return json({ ok: true, affiliated: userRow.uid, handle: userRow.handle });
+      }
+      {
+        const m = path.match(/^\/api\/affiliations\/([A-Za-z0-9_-]+)$/);
+        if (m && method === 'DELETE') {
+          const uid = await guard(request, env, 30);
+          await ensureAffiliationsTable(env.DB);
+          await requireCompany(env.DB, uid);
+          const targetUid = vStr(m[1], 'user_uid', 1, 64);
+          await env.DB.prepare(
+            'DELETE FROM affiliations WHERE company_uid = ? AND user_uid = ?'
+          ).bind(uid, targetUid).run();
+          return json({ ok: true });
+        }
+      }
+
       // ---------- hashtags ----------
       if (path === '/api/hashtags/trending' && method === 'GET') {
         await guard(request, env);
@@ -1401,7 +1501,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
             .all();
           const out = [];
           for (const r of rows.results as Record<string, unknown>[]) {
-            out.push({ ...r, is_verified: await isVerified(env.DB, r.uid as string), media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string).catch(() => r.media_url) });
+            out.push({ ...r, is_verified: await isVerified(env.DB, r.uid as string), affiliated_with: await affiliationFor(env.DB, r.uid as string), media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string).catch(() => r.media_url) });
           }
           return json({ tag, videos: out });
         }
@@ -1520,7 +1620,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         for (const r of rows.results as Record<string, unknown>[]) {
           const promo = await env.DB.prepare("SELECT id FROM promotions WHERE video_id = ? AND status = 'active' AND ends_at > ?")
             .bind(r.id, now()).first();
-          out.push({ ...r, is_verified: await isVerified(env.DB, r.uid as string), promoted: !!promo, media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string).catch(() => r.media_url) });
+          out.push({ ...r, is_verified: await isVerified(env.DB, r.uid as string), affiliated_with: await affiliationFor(env.DB, r.uid as string), promoted: !!promo, media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string).catch(() => r.media_url) });
         }
         return json({ videos: out, nextCursor: cursor });
       }
@@ -1570,7 +1670,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
             .all();
           const out = [];
           for (const r of rows.results as Record<string, unknown>[]) {
-            out.push({ ...r, is_verified: await isVerified(env.DB, r.uid as string) });
+            out.push({ ...r, is_verified: await isVerified(env.DB, r.uid as string), affiliated_with: await affiliationFor(env.DB, r.uid as string) });
           }
           return json({ comments: out });
         }
@@ -2334,6 +2434,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
             is_verified: !!row.is_verified,
             verification_type: row.verification_type || '',
             kyc_status: row.kyc_status,
+            affiliated_with: await affiliationFor(env.DB, row.uid),
           });
         }
       }
