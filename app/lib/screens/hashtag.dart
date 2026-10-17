@@ -68,9 +68,9 @@ class HashtagChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFF1a1a1a),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFFFC107).withValues(alpha: 0.4)),
+          border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.4)),
         ),
-        child: Text('#$tag${uses != null ? ' · $uses' : ''}', style: const TextStyle(color: Color(0xFFFFC107), fontWeight: FontWeight.w600)),
+        child: Text('#$tag${uses != null ? ' · $uses' : ''}', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)),
       ),
     );
   }
@@ -106,7 +106,7 @@ class _HashtagScreenState extends State<HashtagScreen> {
       backgroundColor: Colors.black,
       appBar: AppBar(backgroundColor: Colors.black, title: Text('#${widget.tag}')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
+          ? Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary))
           : _videos.isEmpty
               ? const Center(child: Text('No videos with this tag yet.', style: TextStyle(color: Colors.white54)))
               : GridView.builder(
@@ -225,7 +225,7 @@ class _ViewerCardState extends State<_ViewerCard> {
         if (_c != null && _c!.value.isInitialized)
           FittedBox(fit: BoxFit.cover, child: SizedBox(width: _c!.value.size.width, height: _c!.value.size.height, child: VideoPlayer(_c!)))
         else
-          const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107))),
+          Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary)),
         Positioned(
           left: 12, right: 12, bottom: 24,
           child: Column(
@@ -233,7 +233,7 @@ class _ViewerCardState extends State<_ViewerCard> {
             children: [
               Row(children: [
                 Text('@${v.handle}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                if (v.isVerified) ...[const SizedBox(width: 4), const VerifiedBadge(size: 14)],
+                if (v.isVerified) ...[const SizedBox(width: 4), VerifiedBadge(size: 14, type: v.verificationType)],
               ]),
               const SizedBox(height: 6),
               if (v.caption.isNotEmpty) HashtagText(v.caption),
