@@ -10,6 +10,7 @@ import 'earnings.dart';
 import 'auth.dart';
 import 'kyc.dart';
 import 'p2p.dart';
+import 'wallet_settings.dart';
 
 /// Nova wallet — dark+gold premium skin.
 /// Send | Receive | P2P action row; Binance-style receive flow
@@ -66,6 +67,16 @@ class _WalletScreenState extends State<WalletScreen> {
             icon: const Icon(Icons.history, color: Colors.white70),
             tooltip: 'Transaction history',
             onPressed: () {},
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white70),
+            tooltip: 'Wallet settings',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (_) => const WalletSettingsScreen()),
+              );
+            },
           ),
         ],
       ),
