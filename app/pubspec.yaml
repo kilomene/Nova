@@ -25,6 +25,7 @@ dependencies:
   firebase_core: ^3.10.0
   firebase_auth: ^5.3.4
   firebase_messaging: ^15.2.0
+  google_sign_in: ^7.0.0
   # Wallet crypto (see lib/services/wallet_crypto.dart)
   bip39: ^1.0.6
   cryptography: ^2.7.0
