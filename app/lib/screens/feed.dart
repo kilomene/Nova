@@ -282,7 +282,7 @@ class _VideoCardState extends State<VideoCard> {
                   iconWidget: NovaIcon.share(size: 30),
                   label: _fmt(v.shareCount),
                   onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: 'Nova video by @${v.handle}: ${v.caption}'));
+                    await Clipboard.setData(ClipboardData(text: 'https://nova.app/v/${v.id}'));
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied')));
                     }
