@@ -14,10 +14,39 @@ class CoinsScreen extends StatefulWidget {
 }
 
 class _CoinsScreenState extends State<CoinsScreen> {
+  /// Guards the post-checkout balance poll (one poll at a time).
+  bool _pollingPayment = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => context.read<AppState>().coins.refresh(context.read<AppState>().api));
+  }
+
+  /// After the checkout page opens in the browser, the Flutterwave webhook
+  /// credits the coins asynchronously. Poll the balance for ~2 minutes and
+  /// stop early once it moves, so the user sees the credit without having
+  /// to hunt for a refresh button.
+  Future<void> _pollForCredit(AppState state, int before) async {
+    if (_pollingPayment) return;
+    _pollingPayment = true;
+    try {
+      for (var i = 0; i < 12; i++) {
+        await Future.delayed(const Duration(seconds: 10));
+        if (!mounted) return;
+        await state.coins.refresh(state.api);
+        if (state.coins.balance > before) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(
+                    'Payment confirmed: +${state.coins.balance - before} coins')));
+          }
+          return;
+        }
+      }
+    } finally {
+      _pollingPayment = false;
+    }
   }
 
   Future<void> _buy(dynamic pkg) async {
@@ -56,7 +85,23 @@ class _CoinsScreenState extends State<CoinsScreen> {
       if (state.isDemo) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Demo credit: +${pkg.coins} coins')));
       } else if (opened) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Checkout opened — coins credit automatically after payment.')));
+        // Full flow: backend returned a checkout URL and it was opened in
+        // the browser. On return, refresh the balance (manual + automatic
+        // poll for the async webhook credit).
+        final before = state.coins.balance;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+                'Checkout opened — complete the payment in the browser, then return here.'),
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: 'Refresh',
+              textColor: const Color(0xFFFFC107),
+              onPressed: () => state.coins.refresh(state.api),
+            ),
+          ),
+        );
+        _pollForCredit(state, before);
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Purchase failed: ${e is ApiException ? e.message : e}')));
