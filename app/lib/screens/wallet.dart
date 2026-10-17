@@ -664,6 +664,62 @@ class ReceiveAddressScreen extends StatelessWidget {
                 'TRON address generation is coming soon — this shows your EVM address for now. Do not send TRC20 assets here yet.',
               ),
             ],
+            const SizedBox(height: 20),
+            const Text('Or share your Nova tag',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15)),
+            const SizedBox(height: 8),
+            Builder(builder: (context) {
+              final handle = context.read<AppState>().me?.handle ?? '';
+              final tag = '@$handle';
+              return Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF161616),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: const Color(0xFFFFC107).withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.alternate_email,
+                        color: Color(0xFFFFC107), size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(tag,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800)),
+                          const Text(
+                              'Anyone on Nova can send you crypto with just this tag — no address needed.',
+                              style: TextStyle(
+                                  color: Colors.white54, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy,
+                          color: Color(0xFFFFC107)),
+                      onPressed: () async {
+                        await Clipboard.setData(
+                            ClipboardData(text: tag));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Tag copied')));
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              );
+            }),
           ],
         ),
       ),
