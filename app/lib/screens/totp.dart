@@ -68,9 +68,9 @@ class _TotpSetupScreenState extends State<TotpSetupScreen> {
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('1. Open Google Authenticator (or iOS Passwords) and add this secret:',
+                  Text('1. Open Google Authenticator (or iOS Passwords) and add this secret:',
                       style: TextStyle(color: Colors.white)),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   if (_busy) Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary)),
                   if (_secret != null) ...[
                     SelectableText(_secret!,
@@ -94,12 +94,12 @@ class _TotpSetupScreenState extends State<TotpSetupScreen> {
                     decoration: const InputDecoration(labelText: '6-digit code', labelStyle: TextStyle(color: Colors.white54)),
                   ),
                   if (_error != null) ...[
-                    const SizedBox(height: 8),
-                    Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+                    SizedBox(height: 8),
+                    Text(_error!, style: TextStyle(color: Colors.redAccent)),
                   ],
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
+                    style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
                     onPressed: _busy
                         ? null
                         : () async {
