@@ -113,7 +113,7 @@ class _LiveListScreenState extends State<LiveListScreen> {
                     title: Row(
                       children: [
                         Expanded(child: Text(s.title.isEmpty ? '@${s.handle} is live' : s.title, style: const TextStyle(color: Colors.white))),
-                        if (s.isVerified) ...[const SizedBox(width: 4), const VerifiedBadge(size: 14)],
+                        if (s.isVerified) ...[const SizedBox(width: 4), VerifiedBadge(size: 14, type: s.verificationType)],
                       ],
                     ),
                     subtitle: Text('@${s.handle} · ${s.viewerCount} watching', style: const TextStyle(color: Colors.white54)),
@@ -318,7 +318,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> {
                         onTap: _giftFlow,
                         child: Container(
                           padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(color: const Color(0xFFFFC107), borderRadius: BorderRadius.circular(24)),
+                          decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, borderRadius: BorderRadius.circular(24)),
                           child: const Text('🎁', style: TextStyle(fontSize: 20)),
                         ),
                       ),
