@@ -18,19 +18,41 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _fade;
+  late Animation<double> _opacity;
+
   @override
   void initState() {
     super.initState();
+    _fade = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _opacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fade, curve: Curves.easeOut),
+    );
+    _fade.forward();
     _boot();
+  }
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    super.dispose();
   }
 
   Future<void> _boot() async {
     final state = context.read<AppState>();
+    // Minimum splash display for premium feel (not a loading spinner).
+    final minDisplay = Future.delayed(const Duration(milliseconds: 900));
     try {
       // Phase 1 only: Firebase + device + client VPN check (no auth needed).
-      await state.boot();
+      // Timeout so a slow network never hangs the splash.
+      await state.boot().timeout(const Duration(seconds: 8));
     } catch (_) {}
+    await minDisplay;
     if (!mounted) return;
     // Strict anti-VPN: full-screen block until the network is clean.
     // Client layer (tunnel interfaces) + server layer (egress-IP blacklist).
@@ -49,7 +71,7 @@ class _SplashScreenState extends State<SplashScreen> {
     }
     // Signed in (or demo mode): full init, then enter.
     try {
-      await state.init();
+      await state.init().timeout(const Duration(seconds: 10));
     } catch (_) {}
     if (!mounted) return;
     if (state.vpnDetected || state.networkBlocked) {
@@ -61,18 +83,19 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: Colors.black,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _NovaMark(size: 84),
-            SizedBox(height: 16),
-            Text('Nova', style: TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: Colors.white)),
-            SizedBox(height: 24),
-            CircularProgressIndicator(color: Color(0xFFFFC107)),
-          ],
+      body: FadeTransition(
+        opacity: _opacity,
+        child: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _NovaMark(size: 84),
+              SizedBox(height: 16),
+              Text('Nova', style: TextStyle(fontSize: 40, fontWeight: FontWeight.w800, color: Colors.white)),
+            ],
+          ),
         ),
       ),
     );
