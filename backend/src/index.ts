@@ -1623,6 +1623,39 @@ export default {
           .run();
         return json({ avatarUrl, key }, 201);
       }
+      // Get user by uid (for wallet address lookup in DMs, etc.)
+      {
+        const m = path.match(/^\/api\/users\/([A-Za-z0-9_-]+)$/);
+        if (m && method === 'GET') {
+          await guard(request, env);
+          const targetUid = m[1];
+          const row = await env.DB.prepare(
+            'SELECT uid, handle, display_name, avatar_url, evm_address, btc_address FROM users WHERE uid = ? OR handle = ?'
+          ).bind(targetUid, targetUid).first<{
+            uid: string; handle: string; display_name: string; avatar_url: string;
+            evm_address: string; btc_address: string;
+          }>();
+          if (!row) throw httpError(404, 'user_not_found');
+          return json({
+            uid: row.uid,
+            handle: row.handle,
+            displayName: row.display_name,
+            avatarUrl: row.avatar_url,
+            evm_address: row.evm_address,
+            btc_address: row.btc_address,
+          });
+        }
+      }
+      // Register wallet addresses (called when user opens Wallet tab)
+      if (path === '/api/users/wallet-addresses' && method === 'POST') {
+        const uid = await guard(request, env);
+        const b = await readJson(request) as Record<string, unknown>;
+        const evm = vStr(b.evm_address, 'evm_address', 0, 100);
+        const btc = vStr(b.btc_address, 'btc_address', 0, 100);
+        await env.DB.prepare('UPDATE users SET evm_address = ?, btc_address = ?, updated_at = ? WHERE uid = ?')
+          .bind(evm, btc, now(), uid).run();
+        return json({ ok: true });
+      }
 
       // ---------- Flutterwave (server-side only) ----------
       if (path === '/api/payments/charge' && method === 'POST') {
