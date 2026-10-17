@@ -6,6 +6,7 @@ import '../models.dart';
 import '../state/app_state.dart';
 import '../utils/format.dart';
 import '../widgets/ai_badge.dart';
+import '../widgets/gifts.dart';
 import 'follow_list.dart';
 import 'inbox.dart';
 import 'edit_profile.dart';
@@ -249,6 +250,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                   children: [
                     Text('@${u.handle}',
                         style: TextStyle(color: fg, fontSize: 15)),
+                    // Facebook-style verification badge
+                    if (u.isVerified) ...[
+                      const SizedBox(width: 4),
+                      const VerifiedBadge(size: 18),
+                    ],
                     if (u.isOfficial) ...[
                       const SizedBox(width: 6),
                       Container(
