@@ -79,7 +79,7 @@ class _VideoLongPressMenuState extends State<VideoLongPressMenu> {
   void _share(String target) async {
     if (target == 'copy') {
       await Clipboard.setData(ClipboardData(
-          text: 'Nova video by @${widget.video.handle}: ${widget.video.caption}'));
+          text: 'https://nova.app/v/${widget.video.id}'));
       if (mounted) _toast('Link copied');
       return;
     }
