@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/api_client.dart';
 import '../state/app_state.dart';
 
 /// TOTP 2FA setup: shows the secret + otpauth URI (user scans with
@@ -35,7 +36,7 @@ class _TotpSetupScreenState extends State<TotpSetupScreen> {
         _uri = r['otpauthUri'] as String?;
       });
     } catch (e) {
-      setState(() => _error = 'Setup failed: $e');
+      setState(() => _error = e is ApiException ? e.message : 'Setup failed. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
