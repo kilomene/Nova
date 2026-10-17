@@ -34,6 +34,7 @@ dependencies:
   qr_flutter: ^4.1.0
   image_picker: ^1.0.7
   audioplayers: ^6.1.0
+  camera: ^0.11.0
 
 dev_dependencies:
   flutter_test:
