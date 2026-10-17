@@ -32,7 +32,7 @@ class VideoLongPressMenu extends StatefulWidget {
 }
 
 class _VideoLongPressMenuState extends State<VideoLongPressMenu> {
-  static const gold = Color(0xFFFFC107);
+  Color get _accent => Theme.of(context).colorScheme.primary;
 
   void _toast(String msg) {
     Navigator.of(context).pop();
@@ -79,7 +79,7 @@ class _VideoLongPressMenuState extends State<VideoLongPressMenu> {
   void _share(String target) async {
     if (target == 'copy') {
       await Clipboard.setData(ClipboardData(
-          text: 'https://nova.app/v/${widget.video.id}'));
+          text: 'https://user.novamail.store/v/${widget.video.id}'));
       if (mounted) _toast('Link copied');
       return;
     }
@@ -128,14 +128,10 @@ class _VideoLongPressMenuState extends State<VideoLongPressMenu> {
                       height: 58,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFFFD54F), Color(0xFFFFA000)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: Theme.of(context).colorScheme.primary,
                         boxShadow: [
                           BoxShadow(
-                            color: gold.withValues(alpha: 0.4),
+                            color: _accent.withValues(alpha: 0.4),
                             blurRadius: 12,
                             offset: const Offset(0, 4),
                           ),
@@ -467,7 +463,7 @@ class _MenuItem extends StatelessWidget {
           children: [
             Icon(icon,
                 color: goldIcon
-                    ? const Color(0xFFFFC107)
+                    ? Theme.of(context).colorScheme.primary
                     : Colors.white70,
                 size: 24),
             const SizedBox(width: 12),
@@ -507,10 +503,10 @@ class _ToggleItem extends StatelessWidget {
                   color: Colors.white,
                   fontSize: 16,
                   fontWeight: FontWeight.w500)),
-          const Spacer(),
+          Spacer(),
           Switch(
             value: value,
-            activeThumbColor: const Color(0xFFFFC107),
+            activeThumbColor: Theme.of(context).colorScheme.primary,
             onChanged: onChanged,
           ),
         ],
