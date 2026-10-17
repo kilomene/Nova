@@ -105,6 +105,17 @@ class WalletService {
     return w.evmPrivateKeyHex;
   }
 
+  /// Returns true if [pin] correctly unlocks the keystore (i.e. the PIN is
+  /// correct). Used to confirm sensitive actions (e.g. earnings payouts).
+  Future<bool> verifyPin(String pin, ApiClient api) async {
+    try {
+      await _unlockEvmKey(pin, api);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// EVM balance on Sepolia (testnet). Returns ETH as a decimal string.
   Future<String> evmBalance() async {
     if (evmAddress == null) throw WalletException('no_wallet');
