@@ -88,7 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (_loading) {
       return Scaffold(
         backgroundColor: bg,
-        body: const Center(child: CircularProgressIndicator(color: gold)),
+        body: Center(child: CircularProgressIndicator(color: gold)),
       );
     }
     final state = context.watch<AppState>();
@@ -185,10 +185,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                   alignment: Alignment.center,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(3),
+                      padding: EdgeInsets.all(3),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: const LinearGradient(
+                        gradient: LinearGradient(
                           colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.primary],
                         ),
                         boxShadow: [
@@ -226,7 +226,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           child: Container(
                             width: 26,
                             height: 26,
-                            decoration: const BoxDecoration(
+                            decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: Theme.of(context).colorScheme.primary,
                             ),
@@ -332,7 +332,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
                         'Trader score: ${u.traderScore.toStringAsFixed(0)} ★',
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: gold, fontWeight: FontWeight.w600, fontSize: 13)),
                   ),
                 const SizedBox(height: 10),
@@ -507,7 +507,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         color: Colors.white, size: 14),
                     const SizedBox(width: 2),
                     Text(formatCount(v.viewCount),
-                        style: const TextStyle(
+                        style: TextStyle(
                             color: Colors.white,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -568,9 +568,9 @@ class _GoldButton extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(4),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 11),
+        padding: EdgeInsets.symmetric(vertical: 11),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
               colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.primary]),
           borderRadius: BorderRadius.circular(4),
           boxShadow: [
@@ -582,7 +582,7 @@ class _GoldButton extends StatelessWidget {
         ),
         child: Text(label,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
                 color: Colors.black,
                 fontWeight: FontWeight.w800,
                 fontSize: 14)),
