@@ -30,6 +30,9 @@ String _withCommas(int n) {
 String _compact(double v, String suffix) {
   // One decimal only when it adds information (10.5k, not 10.0k).
   final rounded1 = (v * 10).round() / 10;
+  // Guard: 999.95k rounds to 1000k — roll up to the next unit instead.
+  if (rounded1 >= 1000 && suffix == 'k') return _compact(v / 1000, 'M');
+  if (rounded1 >= 1000 && suffix == 'M') return _compact(v / 1000, 'B');
   final text = (rounded1 == rounded1.roundToDouble())
       ? '${rounded1.round()}'
       : '$rounded1';
