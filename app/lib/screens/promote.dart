@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/api_client.dart';
 import '../state/app_state.dart';
 
 /// TikTok Promote-style post promotion.
@@ -32,7 +33,7 @@ class _PromoteScreenState extends State<PromoteScreen> {
       final r = await context.read<AppState>().api.get('/api/promotions/packages');
       if (mounted) setState(() => _packages = (r['packages'] as Map).cast<String, dynamic>());
     } catch (e) {
-      if (mounted) setState(() => _error = 'Could not load packages: $e');
+      if (mounted) setState(() => _error = e is ApiException ? e.message : 'Could not load packages. Please try again.');
     }
   }
 
@@ -86,7 +87,7 @@ class _PromoteScreenState extends State<PromoteScreen> {
                           Navigator.of(context).pop();
                         }
                       } catch (e) {
-                        setState(() => _error = 'Failed: $e');
+                        setState(() => _error = e is ApiException ? e.message : 'Failed. Please try again.');
                       } finally {
                         if (mounted) setState(() => _busy = false);
                       }
