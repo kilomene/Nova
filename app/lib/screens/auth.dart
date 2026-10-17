@@ -159,7 +159,7 @@ class _NetworkBlockedScreenState extends State<NetworkBlockedScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white70),
               ),
-              const SizedBox(height: 24),
+              SizedBox(height: 24),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
                 onPressed: _checking ? null : _retry,
@@ -545,7 +545,7 @@ class _AuthScreenState extends State<AuthScreen> {
           style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: Colors.white),
         ),
         if (widget.notice != null) ...[
-          const SizedBox(height: 10),
+          SizedBox(height: 10),
           Text(
             widget.notice!,
             textAlign: TextAlign.center,
@@ -577,7 +577,7 @@ class _AuthScreenState extends State<AuthScreen> {
           label: 'Continue with Google',
           onTap: _busy ? null : () => _signInWithGoogle(state),
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: 12),
         _optionRow(
           icon: Icon(Icons.person_outline, color: Theme.of(context).colorScheme.primary),
           label: 'Continue with username',
@@ -799,7 +799,7 @@ class _AuthScreenState extends State<AuthScreen> {
               }),
               child: Text(
                 _signup ? 'Log in' : 'Sign up',
-                style: const TextStyle(
+                style: TextStyle(
                     color: Theme.of(context).colorScheme.primary, fontSize: 14, fontWeight: FontWeight.bold),
               ),
             ),
@@ -853,7 +853,7 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
       backgroundColor: Colors.black,
       appBar: AppBar(backgroundColor: Colors.black, title: const Text('Create wallet PIN')),
       body: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -884,10 +884,10 @@ class _PinSetupScreenState extends State<PinSetupScreen> {
               decoration: const InputDecoration(labelText: 'Confirm PIN', labelStyle: TextStyle(color: Colors.white54)),
             ),
             if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+              SizedBox(height: 12),
+              Text(_error!, style: TextStyle(color: Colors.redAccent)),
             ],
-            const SizedBox(height: 24),
+            SizedBox(height: 24),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.black),
               onPressed: _busy
