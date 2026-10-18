@@ -4573,6 +4573,44 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         }
       }
 
+
+      // ---------- profile views ----------
+      {
+        const vm = path.match(/^\/api\/users\/me\/profile-views$/);
+        if (vm && method === 'GET') {
+          const uid = await guard(request, env, 60);
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS profile_views (
+            viewer_uid TEXT NOT NULL, viewed_uid TEXT NOT NULL, created_at INTEGER NOT NULL,
+            PRIMARY KEY (viewer_uid, viewed_uid))`).run();
+          const thirtyDaysAgo = now() - 30 * 24 * 3600 * 1000;
+          const rows = await env.DB.prepare(
+            `SELECT u.uid, u.handle, u.display_name, u.avatar_url, MAX(pv.created_at) as viewed_at,
+             (SELECT 1 FROM follows WHERE follower_uid = ? AND followee_uid = u.uid) as is_following
+             FROM profile_views pv JOIN users u ON u.uid = pv.viewer_uid
+             WHERE pv.viewed_uid = ? AND pv.created_at > ? AND pv.viewer_uid != ?
+             GROUP BY u.uid ORDER BY viewed_at DESC LIMIT 100`
+          ).bind(uid, uid, thirtyDaysAgo, uid).all();
+          const views = (rows.results || []).map((r: any) => ({ ...r, is_following: !!r.is_following }));
+          return json({ views });
+        }
+        // Track a profile view
+        const tm = path.match(/^\/api\/users\/([^/]+)\/view$/);
+        if (tm && method === 'POST') {
+          const uid = await guard(request, env, 60);
+          const target = vStr(tm[1], 'target', 1, 64);
+          const t = await env.DB.prepare('SELECT uid FROM users WHERE uid = ? OR handle = ?').bind(target, target).first() as any;
+          if (t && t.uid !== uid) {
+            await env.DB.prepare(`CREATE TABLE IF NOT EXISTS profile_views (
+              viewer_uid TEXT NOT NULL, viewed_uid TEXT NOT NULL, created_at INTEGER NOT NULL,
+              PRIMARY KEY (viewer_uid, viewed_uid))`).run();
+            await env.DB.prepare(
+              'INSERT INTO profile_views (viewer_uid, viewed_uid, created_at) VALUES (?, ?, ?) ON CONFLICT(viewer_uid, viewed_uid) DO UPDATE SET created_at = ?'
+            ).bind(uid, t.uid, now(), now()).run();
+          }
+          return json({ ok: true });
+        }
+      }
+
       return json({ error: 'not_found' }, 404);
     } catch (e) {
       const err = e as { status?: number; message?: string };
