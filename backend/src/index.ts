@@ -545,7 +545,7 @@ a{color:#D4AF37;font-size:18px;text-decoration:none}
 </div>
 </body>
 </html>`;
-          return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+          return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff' } });
         }
       }
 
