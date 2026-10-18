@@ -11,6 +11,7 @@ import 'affiliates.dart';
 import 'feed.dart';
 import 'follow_list.dart';
 import 'qr_code.dart';
+import 'profile_views.dart';
 import 'inbox.dart';
 import 'edit_profile.dart';
 import 'monetization.dart';
@@ -143,8 +144,9 @@ class _ProfileScreenState extends State<ProfileScreen>
               icon: CustomPaint(size: const Size(24, 24), painter: _FootprintPainter(color: fg)),
               tooltip: 'Profile views',
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('${formatCount(_followers)} profile views')));
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ProfileViewsScreen()),
+                );
               },
             ),
             IconButton(
