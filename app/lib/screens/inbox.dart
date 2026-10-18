@@ -10,7 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models.dart';
 import '../services/api_client.dart';
 import '../state/app_state.dart';
+import 'shipments.dart';
 import 'follow_list.dart';
+import 'profile.dart';
 
 /// Time-ago helper: "now", "5m", "3h", "2d".
 String _timeAgo(int ms) {
@@ -163,6 +165,7 @@ class _InboxScreenState extends State<InboxScreen> {
                   _buildNewFollowersTile(fg, sub),
                   _buildActivityTile(fg, sub),
                   _buildSystemTile(fg, sub),
+                  _buildMarketplaceTile(fg, sub),
                   const SizedBox(height: 4),
                   ..._buildMessageList(state, fg, sub, bg),
                 ],
@@ -391,6 +394,25 @@ class _InboxScreenState extends State<InboxScreen> {
   }
 
   // ---------- messages ----------
+  Widget _buildMarketplaceTile(Color fg, Color sub) {
+    return ListTile(
+      leading: Container(
+        width: 48, height: 48,
+        decoration: BoxDecoration(
+          color: Colors.orange.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.shopping_bag, color: Colors.orange),
+      ),
+      title: Text('Marketplace', style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 16)),
+      subtitle: Text('Orders, shipments & tracking', style: TextStyle(color: sub, fontSize: 13)),
+      trailing: Icon(Icons.chevron_right, color: sub),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const ShipmentsScreen()),
+      ),
+    );
+  }
+
   List<Widget> _buildMessageList(AppState state, Color fg, Color sub, Color bg) {
     if (state.threads.isEmpty) {
       return [
@@ -924,47 +946,90 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final state = context.read<AppState>();
     final myUid = state.auth.uid;
-    final displayName = widget.peerName.isNotEmpty ? widget.peerName : '@${widget.peerHandle}';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Colors.black : Colors.white;
+    final fg = isDark ? Colors.white : Colors.black87;
+    final sub = isDark ? Colors.white54 : Colors.black54;
+    final theirBubble = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF0F0F0);
+    final theirText = isDark ? Colors.white : Colors.black87;
+    const myBubble = Color(0xFF2F80ED);
+    final inputFill = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFF0F0F0);
+    final displayName =
+        widget.peerName.isNotEmpty ? widget.peerName : '@${widget.peerHandle}';
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: bg,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.white24,
-              backgroundImage: widget.peerAvatar.isNotEmpty ? NetworkImage(widget.peerAvatar) : null,
-              child: widget.peerAvatar.isEmpty
-                  ? Text(displayName.isNotEmpty ? displayName[0].toUpperCase() : '?', style: const TextStyle(fontSize: 14))
-                  : null,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(displayName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  Text('@${widget.peerHandle}', style: const TextStyle(fontSize: 12, color: Colors.white54)),
-                ],
+        backgroundColor: bg,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: fg),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        titleSpacing: 0,
+        title: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) =>
+                ProfileScreen(uid: widget.peerUid, handle: widget.peerHandle),
+          )),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 17,
+                backgroundColor: isDark ? Colors.white24 : Colors.black12,
+                backgroundImage: widget.peerAvatar.isNotEmpty
+                    ? NetworkImage(widget.peerAvatar)
+                    : null,
+                child: widget.peerAvatar.isEmpty
+                    ? Text(
+                        displayName.isNotEmpty
+                            ? displayName[0].toUpperCase()
+                            : '?',
+                        style: TextStyle(fontSize: 14, color: fg))
+                    : null,
               ),
-            ),
-          ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(displayName,
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: fg),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
         ),
         actions: [
-          if (_streak > 0)
-            Padding(
-              padding: EdgeInsets.only(right: 4),
-              child: Chip(
-                backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-                label: Text('🔥 $_streak', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 13)),
-                padding: EdgeInsets.zero,
-              ),
-            ),
-          IconButton(
-            icon: const Icon(Icons.call, color: Colors.white),
-            tooltip: 'Voice call',
-            onPressed: () => _startVoiceCall(context),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_horiz, color: fg),
+            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+            onSelected: (v) {
+              if (v == 'profile') {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ProfileScreen(
+                      uid: widget.peerUid, handle: widget.peerHandle),
+                ));
+              } else if (v == 'call') {
+                _startVoiceCall(context);
+              } else if (v == 'crypto') {
+                _sendCrypto(context, widget.peerHandle);
+              }
+            },
+            itemBuilder: (c) => [
+              PopupMenuItem(
+                  value: 'profile',
+                  child:
+                      Text('View profile', style: TextStyle(color: fg))),
+              PopupMenuItem(
+                  value: 'call',
+                  child: Text('Voice call', style: TextStyle(color: fg))),
+              PopupMenuItem(
+                  value: 'crypto',
+                  child:
+                      Text('Send crypto', style: TextStyle(color: fg))),
+            ],
           ),
         ],
       ),
@@ -972,90 +1037,362 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           Expanded(
             child: _loading
-                ? Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary))
+                ? Center(
+                    child: CircularProgressIndicator(
+                        color: Theme.of(context).colorScheme.primary))
                 : _messages.isEmpty
-                    ? const Center(child: Text('Say hello 👋', style: TextStyle(color: Colors.white38)))
+                    ? Center(
+                        child:
+                            Text('Say hello \u{1F44B}', style: TextStyle(color: sub)))
                     : ListView.builder(
                         reverse: true,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
                         itemCount: _messages.length,
                         itemBuilder: (context, i) {
-                          final m = _messages[_messages.length - 1 - i];
+                          final idx = _messages.length - 1 - i;
+                          final m = _messages[idx];
                           final mine = m.senderUid == myUid;
-                          return Align(
-                            alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-                            child: Container(
-                              margin: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: mine ? Theme.of(context).colorScheme.primary : Color(0xFF242424),
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                              child: Text(m.text, style: TextStyle(color: mine ? Colors.black : Colors.white)),
-                            ),
+                          final showDivider = idx == 0 ||
+                              _needsTimeDivider(
+                                  _messages[idx - 1].createdAt, m.createdAt);
+                          final isLast = idx == _messages.length - 1;
+                          return Column(
+                            crossAxisAlignment: mine
+                                ? CrossAxisAlignment.end
+                                : CrossAxisAlignment.start,
+                            children: [
+                              if (showDivider)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 10),
+                                  child: Center(
+                                    child: Text(_dividerLabel(m.createdAt),
+                                        style: TextStyle(
+                                            color: sub, fontSize: 12)),
+                                  ),
+                                ),
+                              _messageBubble(m, mine, isDark, theirBubble,
+                                  theirText, myBubble, fg),
+                              if (mine && isLast)
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                      right: 16, top: 2, bottom: 4),
+                                  child: Text('Seen',
+                                      style:
+                                          TextStyle(color: sub, fontSize: 11)),
+                                ),
+                            ],
                           );
                         },
                       ),
           ),
-          Padding(
-            padding: EdgeInsets.only(left: 12, right: 12, bottom: MediaQuery.of(context).viewInsets.bottom + 12, top: 8),
-            child: Row(
-              children: [
-                IconButton(
-                  tooltip: 'Attach photo/video',
-                  icon: const Icon(Icons.attach_file, color: Colors.white54),
-                  onPressed: () => _pickAttachment(context),
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _ctrl,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      hintText: 'Message…',
-                      hintStyle: TextStyle(color: Colors.white38),
-                      filled: true,
-                      fillColor: Color(0xFF242424),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(20)), borderSide: BorderSide.none),
+          _reactionsBar(isDark, theirBubble, fg, sub, state, myUid),
+          _inputBar(isDark, fg, sub, inputFill, state, myUid),
+        ],
+      ),
+    );
+  }
+
+  bool _needsTimeDivider(int prevMs, int ms) {
+    final a = DateTime.fromMillisecondsSinceEpoch(prevMs);
+    final b = DateTime.fromMillisecondsSinceEpoch(ms);
+    if (a.year != b.year || a.month != b.month || a.day != b.day) return true;
+    return ms - prevMs > 30 * 60 * 1000;
+  }
+
+  String _dividerLabel(int ms) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(ms);
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday'
+    ];
+    final day = days[dt.weekday - 1];
+    var h = dt.hour % 12;
+    if (h == 0) h = 12;
+    final mm = dt.minute.toString().padLeft(2, '0');
+    final ap = dt.hour < 12 ? 'AM' : 'PM';
+    return '$day $h:$mm $ap';
+  }
+
+  Widget _messageBubble(ChatMessage m, bool mine, bool isDark, Color theirBubble,
+      Color theirText, Color myBubble, Color fg) {
+    final bubble = Container(
+      margin: EdgeInsets.only(
+        left: mine ? 64 : 0,
+        right: mine ? 12 : 64,
+        top: 2,
+        bottom: 2,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: mine ? myBubble : theirBubble,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(m.text,
+          style: TextStyle(
+              color: mine ? Colors.white : theirText, fontSize: 15)),
+    );
+    if (mine) return Align(alignment: Alignment.centerRight, child: bubble);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 8, bottom: 2),
+          child: CircleAvatar(
+            radius: 13,
+            backgroundColor: isDark ? Colors.white24 : Colors.black12,
+            backgroundImage: widget.peerAvatar.isNotEmpty
+                ? NetworkImage(widget.peerAvatar)
+                : null,
+            child: widget.peerAvatar.isEmpty
+                ? Text(
+                    widget.peerHandle.isNotEmpty
+                        ? widget.peerHandle[0].toUpperCase()
+                        : '?',
+                    style: TextStyle(fontSize: 10, color: fg))
+                : null,
+          ),
+        ),
+        Flexible(child: bubble),
+      ],
+    );
+  }
+
+  Widget _reactionsBar(bool isDark, Color pill, Color fg, Color sub,
+      AppState state, String myUid) {
+    const emojis = ['\u2764\uFE0F', '\u{1F602}', '\u{1F44D}', '\u{1F446}'];
+    return SizedBox(
+      height: 50,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        children: [
+          for (final e in emojis)
+            GestureDetector(
+              onTap: () => _sendQuick(e, state, myUid),
+              child: Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                    color: pill, borderRadius: BorderRadius.circular(22)),
+                alignment: Alignment.center,
+                child: Text(e, style: const TextStyle(fontSize: 20)),
+              ),
+            ),
+          GestureDetector(
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Al Cast is coming soon')));
+            },
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                  color: pill, borderRadius: BorderRadius.circular(22)),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 42,
+                    child: Stack(
+                      children: [
+                        CircleAvatar(
+                          radius: 11,
+                          backgroundColor:
+                              isDark ? Colors.white24 : Colors.black12,
+                          backgroundImage: widget.peerAvatar.isNotEmpty
+                              ? NetworkImage(widget.peerAvatar)
+                              : null,
+                        ),
+                        Positioned(
+                          left: 20,
+                          child: CircleAvatar(
+                            radius: 11,
+                            backgroundColor:
+                                isDark ? Colors.white24 : Colors.black12,
+                            child: Icon(Icons.person, size: 14, color: sub),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: _recording ? 'Stop recording' : 'Voice message',
-                  icon: Icon(_recording ? Icons.stop_circle : Icons.mic, color: _recording ? Colors.redAccent : Colors.white54),
-                  onPressed: () => _toggleVoiceRecording(context),
-                ),
-                IconButton(
-                  tooltip: 'Send crypto',
-                  icon: Icon(Icons.currency_bitcoin, color: Color(0xFF20D5EC)),
-                  onPressed: () => _sendCrypto(context, widget.peerHandle),
-                ),
-                IconButton(
-                  icon: Icon(Icons.send, color: Theme.of(context).colorScheme.primary),
-                  onPressed: () async {
-                    final t = _ctrl.text.trim();
-                    if (t.isEmpty) return;
-                    _ctrl.clear();
-                    final optimistic = ChatMessage(
-                      id: 'local_${DateTime.now().millisecondsSinceEpoch}',
-                      threadId: '',
-                      senderUid: myUid,
-                      text: t,
-                      createdAt: DateTime.now().millisecondsSinceEpoch,
-                    );
-                    setState(() => _messages.add(optimistic));
-                    try {
-                      await state.sendMessage(widget.peerUid, t);
-                      _bumpStreak();
-                      _load();
-                    } catch (_) {}
-                  },
-                ),
-              ],
+                  const SizedBox(width: 4),
+                  Text('Al Cast',
+                      style: TextStyle(
+                          color: fg,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500)),
+                ],
+              ),
             ),
           ),
         ],
       ),
     );
   }
+
+  Future<void> _sendQuick(String text, AppState state, String myUid) async {
+    final optimistic = ChatMessage(
+      id: 'local_${DateTime.now().millisecondsSinceEpoch}',
+      threadId: '',
+      senderUid: myUid,
+      text: text,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    setState(() => _messages.add(optimistic));
+    try {
+      await state.sendMessage(widget.peerUid, text);
+      _bumpStreak();
+      _load();
+    } catch (_) {}
+  }
+
+  Widget _inputBar(bool isDark, Color fg, Color sub, Color fill, AppState state,
+      String myUid) {
+    return Padding(
+      padding: EdgeInsets.only(
+          left: 8,
+          right: 8,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 10,
+          top: 4),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'Take photo',
+            icon: Icon(Icons.camera_alt_outlined, color: sub),
+            onPressed: () => _takePhoto(context),
+          ),
+          Expanded(
+            child: TextField(
+              controller: _ctrl,
+              style: TextStyle(color: fg),
+              decoration: InputDecoration(
+                hintText: 'Message...',
+                hintStyle: TextStyle(color: sub),
+                filled: true,
+                fillColor: fill,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                border: const OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(24)),
+                    borderSide: BorderSide.none),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Attach photo',
+            icon: Icon(Icons.image_outlined, color: sub),
+            onPressed: () => _pickAttachment(context),
+          ),
+          IconButton(
+            tooltip: 'Sticker',
+            icon: Icon(Icons.emoji_emotions_outlined, color: sub),
+            onPressed: _showEmojiSheet,
+          ),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _ctrl,
+            builder: (context, v, _) {
+              if (v.text.trim().isNotEmpty) {
+                return IconButton(
+                  tooltip: 'Send',
+                  icon: Icon(Icons.send,
+                      color: Theme.of(context).colorScheme.primary),
+                  onPressed: () => _sendText(state, myUid),
+                );
+              }
+              return IconButton(
+                tooltip: _recording ? 'Stop recording' : 'Voice message',
+                icon: Icon(
+                    _recording ? Icons.stop_circle : Icons.mic_none_outlined,
+                    color: _recording ? Colors.redAccent : sub),
+                onPressed: () => _toggleVoiceRecording(context),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _sendText(AppState state, String myUid) async {
+    final t = _ctrl.text.trim();
+    if (t.isEmpty) return;
+    _ctrl.clear();
+    final optimistic = ChatMessage(
+      id: 'local_${DateTime.now().millisecondsSinceEpoch}',
+      threadId: '',
+      senderUid: myUid,
+      text: t,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    setState(() => _messages.add(optimistic));
+    try {
+      await state.sendMessage(widget.peerUid, t);
+      _bumpStreak();
+      _load();
+    } catch (_) {}
+  }
+
+  Future<void> _takePhoto(BuildContext context) async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(source: ImageSource.camera);
+    if (file == null) return;
+    final state = context.read<AppState>();
+    try {
+      final mediaKey = await state.uploadChatMedia(file.path);
+      await state.sendMessage(widget.peerUid, '', mediaKey: mediaKey);
+      _bumpStreak();
+      _load();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Photo sent')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not send photo: $e')));
+      }
+    }
+  }
+
+  void _showEmojiSheet() {
+    const emojis = [
+      '\u{1F600}', '\u{1F602}', '\u2764\uFE0F', '\u{1F44D}', '\u{1F44E}',
+      '\u{1F64F}', '\u{1F44F}', '\u{1F525}', '\u{1F389}', '\u{1F622}',
+      '\u{1F62E}', '\u{1F621}', '\u{1F914}', '\u{1F44B}', '\u{1F4AF}',
+      '\u2728', '\u{1F970}', '\u{1F60E}', '\u{1F91D}', '\u{1F440}',
+    ];
+    showModalBottomSheet(
+      context: context,
+      builder: (c) => SafeArea(
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          child: GridView.builder(
+            shrinkWrap: true,
+            gridDelegate:
+                const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 8),
+            itemCount: emojis.length,
+            itemBuilder: (c, i) => GestureDetector(
+              onTap: () {
+                _ctrl.text = '${_ctrl.text}${emojis[i]}';
+                _ctrl.selection = TextSelection.fromPosition(
+                    TextPosition(offset: _ctrl.text.length));
+                Navigator.of(c).pop();
+              },
+              child: Center(
+                  child: Text(emojis[i],
+                      style: const TextStyle(fontSize: 26))),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
 
   /// Pick photo/video from GALLERY (not file picker).
   Future<void> _pickAttachment(BuildContext context) async {
