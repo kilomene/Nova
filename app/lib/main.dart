@@ -67,7 +67,7 @@ class NovaApp extends StatelessWidget {
       theme: ThemeData.light(useMaterial3: true).copyWith(
         scaffoldBackgroundColor: Colors.white,
         colorScheme: const ColorScheme.light(
-          primary: Colors.black,
+          primary: Color(0xFFB8860B),
           onPrimary: Colors.white,
           secondary: Color(0xFF20D5EC),
           surface: Color(0xFFF5F5F5),
@@ -75,13 +75,13 @@ class NovaApp extends StatelessWidget {
         appBarTheme: const AppBarTheme(backgroundColor: Colors.white, foregroundColor: Colors.black87),
         inputDecorationTheme: const InputDecorationTheme(
           enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black12)),
-          focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.black)),
+          focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFB8860B))),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white),
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB8860B), foregroundColor: Colors.white),
         ),
         filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(backgroundColor: Colors.black, foregroundColor: Colors.white),
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFFB8860B), foregroundColor: Colors.white),
         ),
         textButtonTheme: TextButtonThemeData(
           style: TextButton.styleFrom(foregroundColor: Colors.black),
@@ -93,7 +93,7 @@ class NovaApp extends StatelessWidget {
       darkTheme: ThemeData.dark(useMaterial3: true).copyWith(
         scaffoldBackgroundColor: Colors.black,
         colorScheme: const ColorScheme.dark(
-          primary: Colors.white,
+          primary: Color(0xFFD4AF37),
           onPrimary: Colors.black,
           secondary: Color(0xFF20D5EC),
           surface: Color(0xFF1A1A1A),
@@ -101,13 +101,13 @@ class NovaApp extends StatelessWidget {
         appBarTheme: const AppBarTheme(backgroundColor: Colors.black, foregroundColor: Colors.white),
         inputDecorationTheme: const InputDecorationTheme(
           enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
-          focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+          focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFD4AF37))),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black),
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD4AF37), foregroundColor: Colors.black),
         ),
         filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black),
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFFD4AF37), foregroundColor: Colors.black),
         ),
         textButtonTheme: TextButtonThemeData(
           style: TextButton.styleFrom(foregroundColor: Colors.white),
