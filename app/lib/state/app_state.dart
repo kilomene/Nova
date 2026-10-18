@@ -530,37 +530,58 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Users following [uidOrHandle].
+  /// Users following [uidOrHandle], with live tab counts.
   ///
-  /// Backend dependency: the server does not yet expose a followers list
-  /// endpoint. This calls the conventional REST routes
-  /// GET /api/users/:id/followers and GET /api/users/:id/following and
-  /// returns [] (with the error swallowed) until the backend adds them.
-  Future<List<NovaUser>> fetchFollowers(String uidOrHandle) async {
-    if (isDemo) return [];
+  /// GET /api/users/:id/followers — rows carry is_live, new_post_count,
+  /// viewer_follows and follows_viewer.
+  Future<FollowListResult> fetchFollowers(String uidOrHandle) async {
+    if (isDemo) return FollowListResult.empty();
     try {
       final id = Uri.encodeComponent(uidOrHandle);
       final r = await api.get('/api/users/$id/followers');
-      return ((r['users'] as List?) ?? [])
-          .map((e) => NovaUser.fromJson((e as Map).cast<String, dynamic>()))
-          .toList();
+      return _parseFollowList(r);
     } catch (_) {
-      return [];
+      return FollowListResult.empty();
     }
   }
 
-  /// Users [uidOrHandle] follows. Same backend dependency as [fetchFollowers].
-  Future<List<NovaUser>> fetchFollowing(String uidOrHandle) async {
-    if (isDemo) return [];
+  /// Users [uidOrHandle] follows, with live tab counts.
+  /// GET /api/users/:id/following — LIVE users come first (server-ordered).
+  Future<FollowListResult> fetchFollowing(String uidOrHandle) async {
+    if (isDemo) return FollowListResult.empty();
     try {
       final id = Uri.encodeComponent(uidOrHandle);
       final r = await api.get('/api/users/$id/following');
-      return ((r['users'] as List?) ?? [])
-          .map((e) => NovaUser.fromJson((e as Map).cast<String, dynamic>()))
-          .toList();
+      return _parseFollowList(r);
     } catch (_) {
-      return [];
+      return FollowListResult.empty();
     }
+  }
+
+  /// Mutual follows of [uidOrHandle] (both directions).
+  /// GET /api/users/:id/friends.
+  Future<FollowListResult> fetchFriends(String uidOrHandle) async {
+    if (isDemo) return FollowListResult.empty();
+    try {
+      final id = Uri.encodeComponent(uidOrHandle);
+      final r = await api.get('/api/users/$id/friends');
+      return _parseFollowList(r);
+    } catch (_) {
+      return FollowListResult.empty();
+    }
+  }
+
+  FollowListResult _parseFollowList(Map<String, dynamic> r) {
+    final users = ((r['users'] as List?) ?? [])
+        .map((e) => NovaUser.fromJson((e as Map).cast<String, dynamic>()))
+        .toList();
+    final c = (r['counts'] as Map?)?.cast<String, dynamic>() ?? {};
+    return FollowListResult(
+      users: users,
+      followers: (c['followers'] ?? 0) as int,
+      following: (c['following'] ?? 0) as int,
+      friends: (c['friends'] ?? 0) as int,
+    );
   }
 
   Future<NovaUser?> fetchUser(String uidOrHandle) async {
