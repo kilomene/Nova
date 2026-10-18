@@ -342,7 +342,25 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
                   icon: _saved ? Icons.bookmark : Icons.bookmark_border,
                   color: _saved ? Theme.of(context).colorScheme.primary : Colors.white,
                   label: 'Save',
-                  onTap: () => setState(() => _saved = !_saved),
+                  onTap: () async {
+                    final state = context.read<AppState>();
+                    final newVal = !_saved;
+                    setState(() => _saved = newVal);
+                    try {
+                      if (newVal) {
+                        await state.api.post('/api/videos/${v.id}/save', {});
+                      } else {
+                        await state.api.delete('/api/videos/${v.id}/save');
+                      }
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(newVal ? 'Saved to bookmarks' : 'Removed from bookmarks')),
+                        );
+                      }
+                    } catch (_) {
+                      if (mounted) setState(() => _saved = !newVal);
+                    }
+                  },
                 ),
                 _RailButton(
                   iconWidget: NovaIcon.share(size: 30),
