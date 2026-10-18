@@ -51,6 +51,12 @@ class NovaUser {
   final bool isVerified;
   final String verificationType; // 'personal' | 'business' | ''
   final Affiliation? affiliatedWith;
+  // Follow-list enrichment (from /api/users/:id/followers|following|friends).
+  // Mutable: the follow list screen updates them optimistically on toggle.
+  bool isLive;
+  int newPostCount;
+  bool viewerFollows;
+  bool followsViewer;
 
   NovaUser({
     required this.uid,
@@ -69,6 +75,10 @@ class NovaUser {
     this.isVerified = false,
     this.verificationType = '',
     this.affiliatedWith,
+    this.isLive = false,
+    this.newPostCount = 0,
+    this.viewerFollows = false,
+    this.followsViewer = false,
   });
 
   factory NovaUser.fromJson(Map<String, dynamic> j) => NovaUser(
@@ -88,6 +98,10 @@ class NovaUser {
         isVerified: (j['is_verified'] ?? j['isVerified'] ?? false) == true,
         verificationType: '${j['verification_type'] ?? j['verificationType'] ?? ''}',
         affiliatedWith: parseAffiliation(j['affiliated_with'] ?? j['affiliatedWith']),
+        isLive: (j['is_live'] ?? j['isLive'] ?? 0) == 1 || (j['is_live'] ?? j['isLive']) == true,
+        newPostCount: (j['new_post_count'] ?? j['newPostCount'] ?? 0) as int,
+        viewerFollows: (j['viewer_follows'] ?? j['viewerFollows'] ?? 0) == 1 || (j['viewer_follows'] ?? j['viewerFollows']) == true,
+        followsViewer: (j['follows_viewer'] ?? j['followsViewer'] ?? 0) == 1 || (j['follows_viewer'] ?? j['followsViewer']) == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -100,6 +114,22 @@ class NovaUser {
         'trader_score': traderScore,
         'trades_completed': tradesCompleted,
       };
+}
+
+/// Result of a follow-list fetch: the users plus live tab counts.
+class FollowListResult {
+  final List<NovaUser> users;
+  final int followers;
+  final int following;
+  final int friends;
+  const FollowListResult({
+    required this.users,
+    required this.followers,
+    required this.following,
+    required this.friends,
+  });
+  factory FollowListResult.empty() =>
+      const FollowListResult(users: [], followers: 0, following: 0, friends: 0);
 }
 
 class NovaVideo {
