@@ -562,8 +562,8 @@ input:focus{outline:none;border-color:var(--gold)}
 .ad-slot .ad-label{font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
 </style>
 
-<!-- GOOGLE ADSENSE SETUP: replace ca-pub-XXXXXXXXXXXXXXXX with your real AdSense publisher ID, and replace every data-ad-slot="XXXXXXXXXX" below with your real ad unit IDs. -->
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
+<!-- GOOGLE ADSENSE SETUP: replace ca-pub-2431202994591245 with your real AdSense publisher ID, and replace every data-ad-slot="XXXXXXXXXX" below with your real ad unit IDs. -->
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2431202994591245" crossorigin="anonymous"></script>
 </head>
 <body>
 <div class="wrap">
@@ -574,7 +574,7 @@ input:focus{outline:none;border-color:var(--gold)}
 <div class="ad-label">Advertisement</div>
 <ins class="adsbygoogle"
      style="display:block"
-     data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+     data-ad-client="ca-pub-2431202994591245"
      data-ad-slot="XXXXXXXXXX"
      data-ad-format="auto"
      data-full-width-responsive="true"></ins>
@@ -599,7 +599,7 @@ input:focus{outline:none;border-color:var(--gold)}
 <div class="ad-label">Advertisement</div>
 <ins class="adsbygoogle"
      style="display:block"
-     data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+     data-ad-client="ca-pub-2431202994591245"
      data-ad-slot="XXXXXXXXXX"
      data-ad-format="auto"
      data-full-width-responsive="true"></ins>
@@ -611,7 +611,7 @@ input:focus{outline:none;border-color:var(--gold)}
 <div class="ad-label">Advertisement</div>
 <ins class="adsbygoogle"
      style="display:block"
-     data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+     data-ad-client="ca-pub-2431202994591245"
      data-ad-slot="XXXXXXXXXX"
      data-ad-format="auto"
      data-full-width-responsive="true"></ins>
