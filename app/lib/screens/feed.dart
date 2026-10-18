@@ -11,6 +11,7 @@ import '../utils/format.dart';
 import '../widgets/ai_badge.dart';
 import '../widgets/gifts.dart';
 import '../widgets/comment_tile.dart';
+import '../widgets/share_sheet.dart';
 import '../widgets/nova_icons.dart';
 import '../widgets/video_longpress_menu.dart';
 import 'discover.dart';
@@ -364,14 +365,14 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
                   },
                 ),
                 _RailButton(
-                  iconWidget: NovaIcon.share(size: 30),
+                  iconWidget: NovaIcon.share(size: 36),
                   label: _fmt(v.shareCount),
-                  onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: 'https://user.novamail.store/v/${v.id}'));
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied')));
-                    }
-                  },
+                  onTap: () => showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => ShareSheet(video: v),
+                  ),
                 ),
                 _RailButton(
                   icon: Icons.more_vert,
