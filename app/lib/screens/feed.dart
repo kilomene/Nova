@@ -10,6 +10,7 @@ import '../state/app_state.dart';
 import '../utils/format.dart';
 import '../widgets/ai_badge.dart';
 import '../widgets/gifts.dart';
+import '../widgets/comment_tile.dart';
 import '../widgets/nova_icons.dart';
 import '../widgets/video_longpress_menu.dart';
 import 'discover.dart';
@@ -557,7 +558,6 @@ class _CommentsSheetState extends State<CommentsSheet> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final sheetBg = isDark ? const Color(0xFF161616) : Colors.white;
     final fg = isDark ? Colors.white : Colors.black87;
-    final sub = isDark ? Colors.white70 : Colors.black54;
     final faint = isDark ? Colors.white38 : Colors.black38;
     final fieldFill = isDark ? const Color(0xFF242424) : const Color(0xFFF0F0F0);
     final avatarBg = isDark ? Colors.white24 : Colors.black12;
@@ -586,24 +586,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
                       itemCount: _comments.length,
                       itemBuilder: (context, i) {
                         final c = _comments[i];
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: avatarBg,
-                            backgroundImage: c.avatarUrl.isNotEmpty ? NetworkImage(c.avatarUrl) : null,
-                            child: c.avatarUrl.isEmpty ? Text(c.handle.isNotEmpty ? c.handle[0].toUpperCase() : '?') : null,
-                          ),
-                          title: Row(
-                            children: [
-                              Text(c.handle, style: TextStyle(color: fg, fontWeight: FontWeight.bold, fontSize: 13)),
-                              if (c.isVerified) ...[const SizedBox(width: 4), VerifiedBadge(size: 13, type: c.verificationType)],
-                              if (c.affiliatedWith != null) ...[const SizedBox(width: 4), AffiliateBadge(avatarUrl: c.affiliatedWith!.avatarUrl, size: 13)],
-                            ],
-                          ),
-                          subtitle: Text(c.text, style: TextStyle(color: sub)),
-                          trailing: IconButton(
-                            icon: Icon(Icons.flag_outlined, size: 16, color: faint),
-                            onPressed: () => showReportDialog(context, targetType: 'comment', targetId: c.id),
-                          ),
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: CommentTile(comment: c, videoId: widget.video.id),
                         );
                       },
                     ),
