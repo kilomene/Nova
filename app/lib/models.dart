@@ -227,6 +227,9 @@ class VideoComment {
   final bool isVerified;
   final String verificationType; // 'personal' | 'business' | ''
   final Affiliation? affiliatedWith;
+  int likeCount;
+  bool likedByMe;
+  int replyCount;
 
   VideoComment({
     required this.id,
@@ -239,6 +242,9 @@ class VideoComment {
     this.isVerified = false,
     this.verificationType = '',
     this.affiliatedWith,
+    this.likeCount = 0,
+    this.likedByMe = false,
+    this.replyCount = 0,
   });
 
   factory VideoComment.fromJson(Map<String, dynamic> j) => VideoComment(
@@ -252,6 +258,9 @@ class VideoComment {
         isVerified: (j['is_verified'] ?? false) == true,
         verificationType: '${j['verification_type'] ?? ''}',
         affiliatedWith: parseAffiliation(j['affiliated_with'] ?? j['affiliatedWith']),
+        likeCount: (j['like_count'] ?? 0) as int,
+        likedByMe: (j['liked_by_me'] ?? false) == true,
+        replyCount: (j['reply_count'] ?? 0) as int,
       );
 }
 
@@ -408,6 +417,9 @@ class ChatMessage {
   final String senderUid;
   final String text;
   final int createdAt;
+  final String mediaKey;
+  final String mediaUrl;
+  final int durationS;
 
   ChatMessage({
     required this.id,
@@ -415,7 +427,13 @@ class ChatMessage {
     required this.senderUid,
     required this.text,
     required this.createdAt,
+    this.mediaKey = '',
+    this.mediaUrl = '',
+    this.durationS = 0,
   });
+
+  /// True when this message carries a voice-note attachment.
+  bool get isVoiceNote => mediaKey.isNotEmpty || mediaUrl.isNotEmpty;
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) => ChatMessage(
         id: '${j['id'] ?? ''}',
@@ -423,6 +441,9 @@ class ChatMessage {
         senderUid: '${j['sender_uid'] ?? j['senderUid'] ?? ''}',
         text: '${j['text'] ?? ''}',
         createdAt: (j['created_at'] ?? j['createdAt'] ?? 0) as int,
+        mediaKey: '${j['media_key'] ?? j['mediaKey'] ?? ''}',
+        mediaUrl: '${j['media_url'] ?? j['mediaUrl'] ?? ''}',
+        durationS: (j['duration_s'] ?? j['durationS'] ?? 0) as int,
       );
 }
 
@@ -464,6 +485,52 @@ class ChatThread {
       updatedAt: (j['updated_at'] ?? j['updatedAt'] ?? 0) as int,
       unreadCount: (j['unread_count'] ?? 0) as int,
     );
+  }
+}
+
+class SuggestedUser {
+  final String uid;
+  final String handle;
+  final String displayName;
+  final String avatarUrl;
+  final bool isVerified;
+  final String verificationType;
+  final int mutuals;
+  final String mutualName;
+  final List<String> mutualAvatars;
+
+  SuggestedUser({
+    required this.uid,
+    required this.handle,
+    this.displayName = '',
+    this.avatarUrl = '',
+    this.isVerified = false,
+    this.verificationType = '',
+    this.mutuals = 0,
+    this.mutualName = '',
+    this.mutualAvatars = const [],
+  });
+
+  factory SuggestedUser.fromJson(Map<String, dynamic> j) => SuggestedUser(
+        uid: '${j['uid'] ?? ''}',
+        handle: '${j['handle'] ?? 'user'}',
+        displayName: '${j['display_name'] ?? ''}',
+        avatarUrl: '${j['avatar_url'] ?? ''}',
+        isVerified: (j['is_verified'] ?? false) == true,
+        verificationType: '${j['verification_type'] ?? ''}',
+        mutuals: (j['mutuals'] ?? 0) as int,
+        mutualName: '${j['mutual_name'] ?? ''}',
+        mutualAvatars: ((j['mutual_avatars'] as List?) ?? [])
+            .map((e) => '$e')
+            .where((e) => e.isNotEmpty)
+            .toList(),
+      );
+
+  /// "Friends with X" / "You may know X" / "Popular on Nova".
+  String get reasonLabel {
+    if (mutuals > 0 && mutualName.isNotEmpty) return 'Friends with $mutualName';
+    if (mutuals > 0) return 'Friends with $mutuals mutual';
+    return 'Popular on Nova';
   }
 }
 
