@@ -10,6 +10,7 @@ import '../widgets/gifts.dart';
 import 'affiliates.dart';
 import 'feed.dart';
 import 'follow_list.dart';
+import 'qr_code.dart';
 import 'inbox.dart';
 import 'edit_profile.dart';
 import 'monetization.dart';
@@ -149,11 +150,16 @@ class _ProfileScreenState extends State<ProfileScreen>
             IconButton(
               icon: Icon(Icons.share_outlined, color: fg),
               tooltip: 'Share profile',
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: 'https://user.novamail.store/${u.handle}'));
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Profile link copied')));
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => QrCodeScreen(
+                      handle: u.handle,
+                      displayName: u.displayName,
+                      avatarUrl: u.avatarUrl,
+                    ),
+                  ),
+                );
                 }
               },
             ),
