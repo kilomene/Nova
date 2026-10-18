@@ -43,8 +43,13 @@ class _ProfileViewsScreenState extends State<ProfileViewsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Profile views'),
-        subtitle: Text('${_views.length} in the last 30 days', style: TextStyle(fontSize: 12, color: sub)),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Profile views'),
+            Text('${_views.length} in the last 30 days', style: TextStyle(fontSize: 12, color: sub)),
+          ],
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
