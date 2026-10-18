@@ -41,6 +41,7 @@ export interface Env {
   MEDIA_SIGNING_SECRET?: string;
   ADMIN_REVIEW_KEY?: string;
   DROPBOX_ACCESS_TOKEN?: string;
+  CLOUDFLARE_DNS_TOKEN?: string;
 }
 
 // Nova Coin packages: USD -> coins (bonus on larger packs).
@@ -270,6 +271,366 @@ async function ensureVerificationColumns(db: D1Database): Promise<void> {
   } catch { /* already exists or table missing */ }
   verificationColsEnsured = true;
 }
+
+
+// ---------- subdomain marketplace (domains.novamail.store) ----------
+// Sell subdomains of novamail.store to anyone: email-based purchase, no Nova
+// account required. Base price $1/mo; short/premium names cost more.
+// Payment via Flutterwave hosted checkout. The checkout collects the payer's
+// email and Flutterwave emails the receipt there — that is the email-ownership
+// gate, because this backend has no outbound email service configured.
+// DNS is provisioned via the Cloudflare API from the Worker, which REQUIRES a
+// Workers secret named CLOUDFLARE_DNS_TOKEN: an API token with Zone -> DNS ->
+// Edit permission on the novamail.store zone. (The wrangler deploy token is
+// NOT available at runtime; this must be a separate least-privilege token.)
+// Routes the parent must add in Cloudflare for this to work end-to-end:
+//   domains.novamail.store/* -> nova-api   (the marketplace itself)
+//   *.novamail.store/*        -> nova-api   (buyer "coming soon" parked pages)
+const DOMAIN_ZONE_ID = '1bfa194fd141b59c5dd0e7c31c064a0a'; // novamail.store
+const DOMAIN_MONTH_MS = 30 * 86400 * 1000;
+
+// Names that are never for sale (infrastructure / brand / confusing).
+const DOMAIN_RESERVED = new Set([
+  'www', 'api', 'mail', 'admin', 'app', 'cdn', 'static', 'assets', 'support',
+  'help', 'blog', 'shop', 'store', 'status', 'dev', 'staging', 'test', 'qa',
+  'ftp', 'dns', 'ns1', 'ns2', 'webmail', 'smtp', 'pop', 'imap', 'secure',
+  'login', 'account', 'billing', 'pay', 'payment', 'checkout', 'coins',
+  'nova', 'user', 'users', 'domains', 'domain', 'root', 'localhost',
+]);
+
+// Premium pricing by length: short names cost more.
+function domainPriceFor(name: string): number {
+  const len = name.length;
+  if (len <= 3) return 10;
+  if (len <= 6) return 5;
+  return 1;
+}
+
+// DNS label rules: lowercase alnum + hyphen, 1-63 chars, no leading/trailing hyphen.
+function isValidSubdomain(name: string): boolean {
+  return /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(name);
+}
+
+// Buyer-supplied point-to target: bare hostname only (no scheme/path/port).
+function isValidHostname(host: string): boolean {
+  return /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(host);
+}
+
+interface DomainPurchase {
+  tx_ref: string; subdomain: string; email: string; target: string;
+  amount_usd: number; kind: string; settled: number;
+}
+interface SubdomainRow {
+  id: string; subdomain: string; owner_email: string; price_monthly: number;
+  target: string; status: string; dns_record_id: string;
+  created_at: number; expires_at: number;
+}
+
+let subdomainTablesEnsured = false;
+async function ensureSubdomainTables(db: D1Database): Promise<void> {
+  if (subdomainTablesEnsured) return;
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS subdomains (
+      id TEXT PRIMARY KEY,
+      subdomain TEXT NOT NULL,
+      owner_email TEXT NOT NULL,
+      price_monthly REAL NOT NULL,
+      target TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      dns_record_id TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      UNIQUE (subdomain)
+    )`),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_subdomains_email ON subdomains(owner_email)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_subdomains_expiry ON subdomains(status, expires_at)'),
+    db.prepare(`CREATE TABLE IF NOT EXISTS domain_purchases (
+      tx_ref TEXT PRIMARY KEY,
+      subdomain TEXT NOT NULL,
+      email TEXT NOT NULL,
+      target TEXT NOT NULL DEFAULT '',
+      amount_usd REAL NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'buy',
+      settled INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    )`),
+  ]);
+  subdomainTablesEnsured = true;
+}
+
+async function domainAvailability(db: D1Database, name: string): Promise<{ available: boolean; reason: string }> {
+  if (!isValidSubdomain(name)) return { available: false, reason: 'invalid_name' };
+  if (DOMAIN_RESERVED.has(name)) return { available: false, reason: 'reserved' };
+  await ensureSubdomainTables(db);
+  const row = await db.prepare(
+    "SELECT 1 FROM subdomains WHERE subdomain = ? AND status = 'active' AND expires_at > ?"
+  ).bind(name, now()).first();
+  if (row) return { available: false, reason: 'taken' };
+  return { available: true, reason: '' };
+}
+
+async function cfDnsCreate(env: Env, name: string, content: string): Promise<string> {
+  const token = env.CLOUDFLARE_DNS_TOKEN;
+  if (!token) throw httpError(500, 'dns_not_configured');
+  const base = `https://api.cloudflare.com/client/v4/zones/${DOMAIN_ZONE_ID}/dns_records`;
+  const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const r = await fetch(base, {
+    method: 'POST', headers,
+    body: JSON.stringify({ type: 'CNAME', name, content, ttl: 1, proxied: true }),
+  });
+  const d = (await r.json()) as { success: boolean; result?: { id: string }; errors?: Array<{ code: number; message: string }> };
+  if (d.success && d.result?.id) return d.result.id;
+  const codes = (d.errors || []).map((e) => e.code);
+  if (codes.includes(81057)) {
+    // Identical record already exists (e.g. orphan from a partial provision) — reuse it.
+    const q = await fetch(`${base}?type=CNAME&name=${encodeURIComponent(name)}`, { headers });
+    const qd = (await q.json()) as { success: boolean; result?: Array<{ id: string; content: string }> };
+    const hit = (qd.result || []).find((x) => x.content === content) || (qd.result || [])[0];
+    if (hit) return hit.id;
+  }
+  console.error('cf dns create failed');
+  throw httpError(502, 'dns_provision_failed');
+}
+
+async function cfDnsDelete(env: Env, recordId: string): Promise<void> {
+  const token = env.CLOUDFLARE_DNS_TOKEN;
+  if (!token || !recordId) return;
+  try {
+    await fetch(`https://api.cloudflare.com/client/v4/zones/${DOMAIN_ZONE_ID}/dns_records/${recordId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+  } catch { /* best effort; record may already be gone */ }
+}
+
+// Provision a paid domain purchase: create the DNS CNAME and activate the
+// subdomain row. Idempotent — safe to call from webhook, callback, renewals,
+// and the manual confirm endpoint. Throws (leaving the purchase unsettled,
+// therefore retryable) if DNS provisioning fails — fail closed so nobody
+// pays for a domain that was never pointed.
+async function provisionDomainPurchase(env: Env, txRef: string): Promise<void> {
+  await ensureSubdomainTables(env.DB);
+  const p = await env.DB.prepare(
+    'SELECT tx_ref, subdomain, email, target, amount_usd, kind, settled FROM domain_purchases WHERE tx_ref = ?'
+  ).bind(txRef).first<DomainPurchase>();
+  if (!p || p.settled) return; // unknown tx_ref, or already provisioned
+  const name = p.subdomain;
+  const t = now();
+  const desiredTarget = p.target || 'novamail.store';
+  const existing = await env.DB.prepare(
+    'SELECT id, target, status, dns_record_id, expires_at FROM subdomains WHERE subdomain = ?'
+  ).bind(name).first<SubdomainRow>();
+  const fqdn = `${name}.novamail.store`;
+  const live = !!existing && (existing.status === 'active' || existing.status === 'pending_dns') && existing.expires_at > t;
+  let recordId = existing?.dns_record_id || '';
+  if (!live || !existing || existing.target !== desiredTarget || !recordId) {
+    if (recordId) await cfDnsDelete(env, recordId);
+    // Default (no buyer target): point at the apex; the Worker serves a
+    // branded "coming soon" page per-host (see the parked-subdomain block in
+    // fetch). That requires the `*.novamail.store/*` -> nova-api route.
+    recordId = await cfDnsCreate(env, fqdn, desiredTarget);
+  }
+  const newExpiry = live ? existing!.expires_at + DOMAIN_MONTH_MS : t + DOMAIN_MONTH_MS;
+  if (existing) {
+    await env.DB.prepare(
+      "UPDATE subdomains SET owner_email = ?, price_monthly = ?, target = ?, status = 'active', dns_record_id = ?, expires_at = ? WHERE id = ?"
+    ).bind(p.email, p.amount_usd, p.target, recordId, newExpiry, existing.id).run();
+  } else {
+    await env.DB.prepare(
+      `INSERT INTO subdomains (id, subdomain, owner_email, price_monthly, target, status, dns_record_id, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`
+    ).bind(newId(), name, p.email, p.amount_usd, p.target, recordId, t, newExpiry).run();
+  }
+  await env.DB.prepare('UPDATE domain_purchases SET settled = 1 WHERE tx_ref = ?').bind(txRef).run();
+}
+
+// Marketplace page for domains.novamail.store. Self-contained HTML/JS:
+// search availability, buy via Flutterwave hosted checkout, renew, and list
+// "my domains" by email. No Nova account required.
+function domainMarketplaceHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Nova Domains — yourname.novamail.store</title>
+<style>
+:root{--gold:#D4AF37;--bg:#0b0b0f;--card:#14141b;--muted:#9a9aa5}
+*{box-sizing:border-box}
+body{background:var(--bg);color:#fff;font-family:system-ui,-apple-system,sans-serif;margin:0;min-height:100vh}
+.wrap{max-width:520px;margin:0 auto;padding:28px 18px 60px}
+.logo{display:block;width:64px;height:64px;border-radius:18px;margin:4px auto 10px}
+h1{text-align:center;font-size:26px;margin:0 0 4px}
+.sub{text-align:center;color:var(--muted);font-size:14px;margin:0 0 22px}
+.card{background:var(--card);border:1px solid #26262f;border-radius:16px;padding:18px;margin-bottom:14px}
+label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
+input{width:100%;background:#0e0e13;border:1px solid #2c2c36;border-radius:10px;color:#fff;padding:12px 14px;font-size:16px;margin-bottom:12px}
+input:focus{outline:none;border-color:var(--gold)}
+.btn{display:block;width:100%;background:linear-gradient(135deg,#e8c55a,#b8941f);color:#111;font-weight:800;font-size:16px;border:none;border-radius:12px;padding:14px;cursor:pointer}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.ghost{background:#1c1c24;color:#fff;border:1px solid #2c2c36;margin-top:10px}
+.row{display:flex;gap:10px}
+.row .btn{margin:0}
+.status{text-align:center;font-size:14px;min-height:22px;margin:10px 0;color:var(--muted)}
+.status.err{color:#ff7a7a}
+.status.ok{color:#7dff9a}
+.price{font-size:30px;font-weight:900;color:var(--gold);text-align:center}
+.per{text-align:center;color:var(--muted);font-size:13px;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+td{padding:8px 4px;border-bottom:1px solid #22222b}
+td:last-child{text-align:right;color:var(--gold);font-weight:700}
+.dom{display:flex;align-items:center;justify-content:space-between;background:#0e0e13;border:1px solid #26262f;border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.dom .n{font-weight:800}
+.dom .m{font-size:12px;color:var(--muted)}
+.dom button{background:none;border:1px solid var(--gold);color:var(--gold);border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:700}
+.small{font-size:12px;color:var(--muted);text-align:center;margin-top:18px;line-height:1.7}
+h2{font-size:17px;margin:22px 0 10px}
+.hint{font-size:12px;color:var(--muted);margin:-6px 0 12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<img class="logo" src="https://user.novamail.store/avatars/nova-logo.png" alt="Nova">
+<h1>Nova Domains</h1>
+<p class="sub">Own <b>yourname</b>.novamail.store — from $1/month</p>
+
+<div class="card">
+<label>Search a subdomain</label>
+<div class="row">
+<input id="name" placeholder="e.g. shop" autocapitalize="off" autocomplete="off" spellcheck="false" style="margin-bottom:0">
+<button class="btn" id="checkBtn" onclick="checkName()">Check</button>
+</div>
+<div class="status" id="checkStatus"></div>
+<div id="buyBox" style="display:none">
+<div class="price">$<span id="priceNum">1</span></div>
+<div class="per">per month · renews monthly · cancel anytime</div>
+<label>Your email</label>
+<input id="email" type="email" placeholder="you@example.com" autocomplete="email">
+<label>Point it to <span style="color:#6a6a75">(optional hostname — leave blank for a "coming soon" page)</span></label>
+<input id="target" placeholder="e.g. myshop.myshopify.com" autocapitalize="off" autocomplete="off" spellcheck="false">
+<div class="hint">We create the DNS for you instantly after payment.</div>
+<button class="btn" id="buyBtn" onclick="buy()">Buy <span id="buyName"></span></button>
+</div>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Pricing</h2>
+<table>
+<tr><td>7+ characters <span style="color:#6a6a75">(e.g. mybrand)</span></td><td>$1/mo</td></tr>
+<tr><td>4–6 characters <span style="color:#6a6a75">(e.g. shop)</span></td><td>$5/mo</td></tr>
+<tr><td>1–3 characters <span style="color:#6a6a75">(e.g. go)</span></td><td>$10/mo</td></tr>
+</table>
+<p class="small">Names like www, api, mail and admin are reserved and never for sale.<br>Expired names return to the pool — renew before the due date.</p>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">My domains</h2>
+<label>Email used at purchase</label>
+<div class="row">
+<input id="myEmail" type="email" placeholder="you@example.com" style="margin-bottom:0">
+<button class="btn ghost" id="myBtn" onclick="myDomains()">Find</button>
+</div>
+<div class="status" id="myStatus"></div>
+<div id="myList"></div>
+</div>
+
+<p class="small">Secure payment by Flutterwave — cards, bank transfer and mobile money.<br>Subdomains are DNS CNAME records on novamail.store.</p>
+</div>
+<script>
+function setStatus(id,msg,cls){var e=document.getElementById(id);e.textContent=msg;e.className='status'+(cls?' '+cls:'');}
+function cleanName(v){return v.trim().toLowerCase().replace(/\\.novamail\\.store$/,'');}
+var lastChecked=null;
+async function checkName(){
+  var name=cleanName(document.getElementById('name').value);
+  if(!name){setStatus('checkStatus','Type a name first.','err');return;}
+  setStatus('checkStatus','Checking…','');document.getElementById('buyBox').style.display='none';
+  try{
+    var r=await fetch('/api/domains/check?name='+encodeURIComponent(name));
+    var d=await r.json();
+    if(d.available){
+      lastChecked={name:d.name,price:d.price_usd};
+      document.getElementById('priceNum').textContent=d.price_usd;
+      document.getElementById('buyName').textContent=d.name+'.novamail.store';
+      document.getElementById('buyBox').style.display='block';
+      setStatus('checkStatus',d.name+'.novamail.store is available!','ok');
+    }else{
+      var why=d.reason==='reserved'?'That name is reserved.':d.reason==='taken'?'Already taken — try another.':'Invalid name (letters, numbers, hyphens only).';
+      setStatus('checkStatus',why,'err');
+    }
+  }catch(e){setStatus('checkStatus','Check failed — try again.','err');}
+}
+async function buy(){
+  if(!lastChecked)return;
+  var email=document.getElementById('email').value.trim();
+  var target=cleanName(document.getElementById('target').value);
+  if(!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)){setStatus('checkStatus','Enter a valid email.','err');return;}
+  var btn=document.getElementById('buyBtn');btn.disabled=true;btn.textContent='Creating checkout…';
+  try{
+    var r=await fetch('/api/domains/buy',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({subdomain:lastChecked.name,email:email,target:target||undefined})});
+    var d=await r.json();
+    if(!r.ok)throw new Error(d.error||'buy_failed');
+    var url=d.checkoutUrl||(d.flutterwave&&d.flutterwave.data&&d.flutterwave.data.link);
+    if(!url)throw new Error('no_checkout');
+    window.location.href=url;
+  }catch(e){
+    setStatus('checkStatus','Could not start payment: '+String(e.message||e),'err');
+    btn.disabled=false;btn.textContent='Buy '+lastChecked.name+'.novamail.store';
+  }
+}
+async function renew(name,email){
+  if(!confirm('Renew '+name+'.novamail.store for another month?'))return;
+  try{
+    var r=await fetch('/api/domains/renew',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({subdomain:name,email:email})});
+    var d=await r.json();
+    if(!r.ok)throw new Error(d.error||'renew_failed');
+    var url=d.checkoutUrl||(d.flutterwave&&d.flutterwave.data&&d.flutterwave.data.link);
+    if(url)window.location.href=url;
+  }catch(e){setStatus('myStatus','Renew failed: '+String(e.message||e),'err');}
+}
+async function myDomains(){
+  var email=document.getElementById('myEmail').value.trim();
+  if(!email){setStatus('myStatus','Enter your email.','err');return;}
+  setStatus('myStatus','Loading…','');document.getElementById('myList').innerHTML='';
+  try{
+    var r=await fetch('/api/domains/my?email='+encodeURIComponent(email));
+    var d=await r.json();
+    if(!r.ok)throw new Error(d.error||'load_failed');
+    if(!d.domains.length){setStatus('myStatus','No domains found for that email.','');return;}
+    setStatus('myStatus','','');
+    var html='';
+    d.domains.forEach(function(x){
+      var exp=new Date(x.expires_at).toLocaleDateString();
+      var st=x.status==='active'?'Active · renews '+exp:x.status;
+      html+='<div class="dom"><div><div class="n">'+x.fqdn+'</div><div class="m">'+st+' · $'+x.price_monthly+'/mo</div></div>'+
+        (x.status==='active'?'<button onclick="renew(\\''+x.subdomain+'\\',\\''+email.replace(/\\'/g,"")+'\\')">Renew</button>':'')+'</div>';
+    });
+    document.getElementById('myList').innerHTML=html;
+  }catch(e){setStatus('myStatus','Load failed: '+String(e.message||e),'err');}
+}
+// If the buyer just returned from Flutterwave (?tx_ref=&transaction_id=&status=),
+// confirm the payment server-side.
+(async function(){
+  var q=new URLSearchParams(location.search);
+  if(q.get('tx_ref')&&q.get('transaction_id')){
+    setStatus('checkStatus','Confirming your payment…','');
+    try{
+      var r=await fetch('/api/domains/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({txRef:q.get('tx_ref'),transactionId:q.get('transaction_id')})});
+      var d=await r.json();
+      if(r.ok&&d.ok){setStatus('checkStatus','Payment confirmed! Your subdomain is live — DNS can take a minute to propagate.','ok');}
+      else setStatus('checkStatus','We could not confirm that payment yet. If you were charged, try "My domains" in a few minutes.','err');
+    }catch(e){setStatus('checkStatus','Confirmation is taking a while — check "My domains" shortly.','err');}
+    history.replaceState(null,'',location.pathname);
+  }
+})();
+document.getElementById('name').addEventListener('keydown',function(e){if(e.key==='Enter')checkName();});
+</script>
+</body>
+</html>`;
+}
+
 
 // Admin gate: x-admin-key header. Used by the agent-run review console.
 async function adminGuard(request: Request, env: Env): Promise<void> {
@@ -542,10 +903,68 @@ a{color:#D4AF37;font-size:18px;text-decoration:none}
 <div>
 <h1>Nova</h1>
 <p><a href="https://user.novamail.store/coins">Buy Nova Coins</a></p>
+<p><a href=\"https://domains.novamail.store\">Get your own novamail.store subdomain \— from $1/mo</a></p>\n
 </div>
 </body>
 </html>`;
           return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff' } });
+        }
+      }
+
+      // ---------- subdomain marketplace host (public, no auth) ----------
+      // domains.novamail.store serves the marketplace. Buyer subdomains
+      // (*.novamail.store, excluding user./domains./apex) get a branded
+      // "coming soon" parked page when the buyer did not point the name
+      // elsewhere. REQUIRES the Cloudflare routes:
+      //   domains.novamail.store/* -> nova-api
+      //   *.novamail.store/*        -> nova-api
+      {
+        const host = (request.headers.get('host') || '').split(':')[0].toLowerCase();
+        if (host === 'domains.novamail.store' && path === '/' && method === 'GET') {
+          await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 60, 60);
+          return new Response(domainMarketplaceHtml(), {
+            headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff' },
+          });
+        }
+        if (
+          host.endsWith('.novamail.store') &&
+          host !== 'user.novamail.store' &&
+          host !== 'domains.novamail.store' &&
+          host !== 'novamail.store' &&
+          path === '/' && method === 'GET'
+        ) {
+          await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 60, 60);
+          await ensureSubdomainTables(env.DB);
+          const label = host.slice(0, -'.novamail.store'.length);
+          const row = await env.DB.prepare(
+            "SELECT subdomain FROM subdomains WHERE subdomain = ? AND status = 'active' AND expires_at > ?"
+          ).bind(label, now()).first<{ subdomain: string }>();
+          if (!row) throw httpError(404, 'not_found');
+          const safe = escHtml(row.subdomain);
+          const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${safe}.novamail.store</title>
+<style>
+body{background:#0b0b0f;color:#fff;font-family:system-ui,-apple-system,sans-serif;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}
+h1{font-size:28px;margin:0 0 8px}
+p{color:#9a9aa5}
+a{color:#D4AF37;text-decoration:none}
+</style>
+</head>
+<body>
+<div>
+<h1>${safe}.novamail.store</h1>
+<p>Coming soon.</p>
+<p><a href="https://domains.novamail.store">Get your own subdomain</a></p>
+</div>
+</body>
+</html>`;
+          return new Response(html, {
+            headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff' },
+          });
         }
       }
 
@@ -2514,6 +2933,115 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         return json({ ok: true });
       }
 
+      // ---------- subdomain marketplace API (public, no auth) ----------
+      // Email-based: anyone can buy, no Nova account needed.
+      if (path === '/api/domains/check' && method === 'GET') {
+        await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 60, 60);
+        const name = (`${url.searchParams.get('name') || ''}`).toLowerCase().trim().replace(/\.novamail\.store$/, '');
+        const { available, reason } = await domainAvailability(env.DB, name);
+        return json({
+          name, available,
+          reason: reason || undefined,
+          price_usd: available ? domainPriceFor(name) : undefined,
+        });
+      }
+      if (path === '/api/domains/buy' && method === 'POST') {
+        await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 20, 60);
+        await ensureSubdomainTables(env.DB);
+        const b = await readJson(request) as Record<string, unknown>;
+        const name = (`${b.subdomain || ''}`).toLowerCase().trim().replace(/\.novamail\.store$/, '');
+        const email = vStr(b.email, 'email', 3, 120);
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw httpError(400, 'email_invalid');
+        const { available, reason } = await domainAvailability(env.DB, name);
+        if (!available) {
+          throw httpError(409, reason === 'reserved' ? 'name_reserved' : reason === 'taken' ? 'name_taken' : 'invalid_name');
+        }
+        let target = '';
+        if (b.target !== undefined && `${b.target}`.trim() !== '') {
+          target = `${b.target}`.trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0].split(':')[0].split('?')[0];
+          if (!isValidHostname(target)) throw httpError(400, 'invalid_target');
+          if (target === 'novamail.store' || target.endsWith('.novamail.store')) throw httpError(400, 'target_not_allowed');
+        }
+        const price = domainPriceFor(name);
+        const txRef = `nova_domain_${name}_${newId()}`;
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO domain_purchases (tx_ref, subdomain, email, target, amount_usd, kind, settled, created_at)
+           VALUES (?, ?, ?, ?, ?, 'buy', 0, ?)`
+        ).bind(txRef, name, email.toLowerCase(), target, price, now()).run();
+        const data = await flutterwaveCharge(env.FLUTTERWAVE_SECRET_KEY, {
+          amount: price,
+          currency: 'USD',
+          email: email.toLowerCase(),
+          tx_ref: txRef,
+          redirectUrl: `${new URL(request.url).origin}/api/payments/callback`,
+        });
+        return json({ checkoutUrl: checkoutLink(data), txRef, flutterwave: data, subdomain: name, price_usd: price });
+      }
+      if (path === '/api/domains/confirm' && method === 'POST') {
+        await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 20, 60);
+        const b = await readJson(request) as Record<string, unknown>;
+        const txRef = vStr(b.txRef, 'txRef', 1, 200);
+        const transactionId = vStr(b.transactionId, 'transactionId', 1, 100);
+        const p = await env.DB.prepare('SELECT amount_usd FROM domain_purchases WHERE tx_ref = ?')
+          .bind(txRef).first<{ amount_usd: number }>();
+        if (!p) throw httpError(404, 'purchase_not_found');
+        let ok = false;
+        try {
+          const v = await flutterwaveVerify(env.FLUTTERWAVE_SECRET_KEY, transactionId);
+          const vd = ((v as Record<string, unknown>).data || {}) as Record<string, unknown>;
+          if (`${vd.status}` === 'successful' && `${vd.tx_ref}` === txRef && Math.abs(Number(vd.amount || 0) - p.amount_usd) < 0.001) {
+            await provisionDomainPurchase(env, txRef);
+            ok = true;
+          }
+        } catch { console.error('domain confirm verify failed'); }
+        if (!ok) throw httpError(502, 'payment_not_confirmed');
+        return json({ ok: true });
+      }
+      if (path === '/api/domains/renew' && method === 'POST') {
+        await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 20, 60);
+        await ensureSubdomainTables(env.DB);
+        const b = await readJson(request) as Record<string, unknown>;
+        const name = (`${b.subdomain || ''}`).toLowerCase().trim().replace(/\.novamail\.store$/, '');
+        const email = vStr(b.email, 'email', 3, 120).toLowerCase();
+        const row = await env.DB.prepare(
+          'SELECT subdomain, owner_email, target FROM subdomains WHERE subdomain = ?'
+        ).bind(name).first<{ subdomain: string; owner_email: string; target: string }>();
+        if (!row || row.owner_email !== email) throw httpError(404, 'domain_not_found');
+        const price = domainPriceFor(name);
+        const txRef = `nova_domain_renew_${name}_${newId()}`;
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO domain_purchases (tx_ref, subdomain, email, target, amount_usd, kind, settled, created_at)
+           VALUES (?, ?, ?, ?, ?, 'renew', 0, ?)`
+        ).bind(txRef, name, email, row.target || '', price, now()).run();
+        const data = await flutterwaveCharge(env.FLUTTERWAVE_SECRET_KEY, {
+          amount: price,
+          currency: 'USD',
+          email,
+          tx_ref: txRef,
+          redirectUrl: `${new URL(request.url).origin}/api/payments/callback`,
+        });
+        return json({ checkoutUrl: checkoutLink(data), txRef, flutterwave: data, subdomain: name, price_usd: price });
+      }
+      if (path === '/api/domains/my' && method === 'GET') {
+        await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 30, 60);
+        await ensureSubdomainTables(env.DB);
+        const email = vStr(url.searchParams.get('email'), 'email', 3, 120).toLowerCase();
+        const rows = await env.DB.prepare(
+          'SELECT subdomain, price_monthly, status, target, created_at, expires_at FROM subdomains WHERE owner_email = ? ORDER BY created_at DESC LIMIT 100'
+        ).bind(email).all<SubdomainRow>();
+        return json({
+          domains: rows.results.map((r) => ({
+            subdomain: r.subdomain,
+            fqdn: `${r.subdomain}.novamail.store`,
+            price_monthly: r.price_monthly,
+            status: r.status,
+            target: r.target || null,
+            created_at: r.created_at,
+            expires_at: r.expires_at,
+          })),
+        });
+      }
+
       // ---------- Flutterwave (server-side only) ----------
       if (path === '/api/payments/charge' && method === 'POST') {
         const uid = await guard(request, env, 20);
@@ -2577,8 +3105,11 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
             console.error('callback verify failed');
           }
         }
+        const domainBuy = txRef.startsWith('nova_domain_');
         const msg = settled
-          ? 'Payment confirmed. Your Nova Coins are on the way — you can return to the Nova app.'
+          ? (domainBuy
+              ? 'Payment confirmed — your subdomain is being activated. It can take a minute for DNS to propagate; check https://domains.novamail.store for status.'
+              : 'Payment confirmed. Your Nova Coins are on the way — you can return to the Nova app.')
           : 'We could not confirm that payment. If you were charged, contact Nova support from the app.';
         return new Response(
           `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nova payment</title></head>` +
@@ -3204,6 +3735,18 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         } catch { /* retry tomorrow */ }
       }
     }
+    // Expire sold subdomains: delete the DNS record, mark expired.
+    // Buyers can renew via /api/domains/renew (manual monthly renewal).
+    try {
+      await ensureSubdomainTables(env.DB);
+      const expired = await env.DB.prepare(
+        "SELECT id, dns_record_id FROM subdomains WHERE status = 'active' AND expires_at <= ? LIMIT 100"
+      ).bind(t).all<{ id: string; dns_record_id: string }>();
+      for (const r of expired.results) {
+        await cfDnsDelete(env, r.dns_record_id);
+        await env.DB.prepare("UPDATE subdomains SET status = 'expired', dns_record_id = '' WHERE id = ?").bind(r.id).run();
+      }
+    } catch { /* retry tomorrow */ }
   },
 };
 
@@ -3282,6 +3825,19 @@ async function settleFlutterwaveTx(env: Env, txRef: string, amount: number, curr
       `UPDATE users SET verification_type = ?, verification_expires_at = ? WHERE uid = ?`
     ).bind(expectedTier, expiresAt, uid).run().catch(() => {});
     await publishToUser(env, uid, { type: 'verification', verified: true, tier: expectedTier });
+    return;
+  }
+  if (txRef.startsWith('nova_domain_')) {
+    // Subdomain purchase or renewal. Source of truth is domain_purchases
+    // (written at buy/renew time); tx_ref is never parsed.
+    const p = await env.DB.prepare('SELECT amount_usd, settled FROM domain_purchases WHERE tx_ref = ?')
+      .bind(txRef).first<{ amount_usd: number; settled: number }>();
+    if (!p || p.settled) return; // unknown tx_ref, or already provisioned
+    if (currency !== 'USD' || Math.abs(amount - p.amount_usd) > 0.001) {
+      console.error('domain settlement mismatch');
+      return;
+    }
+    await provisionDomainPurchase(env, txRef);
     return;
   }
   if (txRef.startsWith('promo_')) {
