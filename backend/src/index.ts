@@ -558,13 +558,28 @@ input:focus{outline:none;border-color:var(--gold)}
 .row{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
 .link{color:var(--gold);font-size:14px;text-decoration:none;background:none;border:none;cursor:pointer;padding:0}
 .small{font-size:12px;color:var(--muted);text-align:center;margin-top:16px;line-height:1.6}
+.ad-slot{margin:0 0 14px;text-align:center}
+.ad-slot .ad-label{font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
 </style>
+
+<!-- GOOGLE ADSENSE SETUP: replace ca-pub-XXXXXXXXXXXXXXXX with your real AdSense publisher ID, and replace every data-ad-slot="XXXXXXXXXX" below with your real ad unit IDs. -->
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
 </head>
 <body>
 <div class="wrap">
 <img class="logo" src="/avatars/nova-logo.png" alt="Nova">
 <h1>Nova Coins</h1>
 <p class="sub">Top up here — coins appear in the Nova app instantly</p>
+<div class="ad-slot">
+<div class="ad-label">Advertisement</div>
+<ins class="adsbygoogle"
+     style="display:block"
+     data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+     data-ad-slot="XXXXXXXXXX"
+     data-ad-format="auto"
+     data-full-width-responsive="true"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</div>
 <div id="loginView" class="card">
 <label>Username or email</label>
 <input id="identifier" autocomplete="username" placeholder="e.g. zenas">
@@ -580,8 +595,28 @@ input:focus{outline:none;border-color:var(--gold)}
 </div>
 <div class="balance"><div class="n"><span id="balNum">0</span> coins</div><div class="sub">Your Nova Coin balance</div></div>
 <div id="pkgList"></div>
+<div class="ad-slot">
+<div class="ad-label">Advertisement</div>
+<ins class="adsbygoogle"
+     style="display:block"
+     data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+     data-ad-slot="XXXXXXXXXX"
+     data-ad-format="auto"
+     data-full-width-responsive="true"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</div>
 <div class="status" id="payStatus"></div>
 <p class="small">Secure payment by Flutterwave — cards, bank transfer,<br>mobile money and Apple Pay where available.</p>
+<div class="ad-slot">
+<div class="ad-label">Advertisement</div>
+<ins class="adsbygoogle"
+     style="display:block"
+     data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+     data-ad-slot="XXXXXXXXXX"
+     data-ad-format="auto"
+     data-full-width-responsive="true"></ins>
+<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</div>
 </div>
 </div>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
