@@ -29,6 +29,20 @@ class _MainShellState extends State<MainShell> {
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => const UploadScreen()));
       return;
     }
+    // Re-tapping the active tab refreshes it (user request: instant refresh).
+    if (i == _index) {
+      final key = switch (i) {
+        0 => 'home',
+        1 => 'shop',
+        3 => 'inbox',
+        4 => 'profile',
+        _ => null,
+      };
+      if (key != null) {
+        context.read<AppState>().requestRefresh(key);
+      }
+      return;
+    }
     setState(() => _index = i);
   }
 
