@@ -4447,6 +4447,13 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           const sellerUid = vStr(body.seller_uid, 'seller_uid', 1, 64);
           const rating = Math.max(1, Math.min(5, Number(body.rating) || 5));
           const comment = vStr(body.comment || '', 'comment', 0, 1000);
+          // VERIFIED PURCHASE ONLY: buyer must have a delivered order from this seller
+          const purchase = await env.DB.prepare(
+            `SELECT 1 FROM market_order_items oi
+             JOIN market_orders o ON o.id = oi.order_id
+             WHERE oi.seller_uid = ? AND o.buyer_uid = ? AND o.status = 'delivered' LIMIT 1`
+          ).bind(sellerUid, uid).first();
+          if (!purchase) throw httpError(403, 'review_requires_delivered_purchase');
           await env.DB.prepare(`CREATE TABLE IF NOT EXISTS seller_reviews (
             id TEXT PRIMARY KEY, seller_uid TEXT NOT NULL, buyer_uid TEXT NOT NULL,
             rating INTEGER NOT NULL, comment TEXT, created_at INTEGER NOT NULL)`).run();
