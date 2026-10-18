@@ -1286,16 +1286,6 @@ input:focus{outline:none;border-color:var(--gold)}
 <img class="logo" src="/avatars/nova-logo.png" alt="Nova">
 <h1>Nova Coins</h1>
 <p class="sub">Top up here — coins appear in the Nova app instantly</p>
-<div class="ad-slot">
-<div class="ad-label">Advertisement</div>
-<ins class="adsbygoogle"
-     style="display:block"
-     data-ad-client="ca-pub-2431202994591245"
-     data-ad-slot="XXXXXXXXXX"
-     data-ad-format="auto"
-     data-full-width-responsive="true"></ins>
-<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
-</div>
 <div id="loginView" class="card">
 <label>Username or email</label>
 <input id="identifier" autocomplete="username" placeholder="e.g. zenas">
@@ -1311,16 +1301,6 @@ input:focus{outline:none;border-color:var(--gold)}
 </div>
 <div class="balance"><div class="n"><span id="balNum">0</span> coins</div><div class="sub">Your Nova Coin balance</div></div>
 <div id="pkgList"></div>
-<div class="ad-slot">
-<div class="ad-label">Advertisement</div>
-<ins class="adsbygoogle"
-     style="display:block"
-     data-ad-client="ca-pub-2431202994591245"
-     data-ad-slot="XXXXXXXXXX"
-     data-ad-format="auto"
-     data-full-width-responsive="true"></ins>
-<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
-</div>
 <div class="status" id="payStatus"></div>
 <p class="small">Secure payment by Flutterwave — cards, bank transfer,<br>mobile money and Apple Pay where available.</p>
 <div class="ad-slot">
