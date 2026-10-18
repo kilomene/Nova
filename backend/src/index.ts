@@ -4312,6 +4312,67 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         }
       }
 
+
+      // ---------- marketplace cart ----------
+      {
+        const cm = path.match(/^\/api\/market\/cart$/);
+        if (cm && method === 'GET') {
+          const uid = await guard(request, env, 60);
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS cart_items (
+            uid TEXT NOT NULL, product_id TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 1,
+            added_at INTEGER NOT NULL, PRIMARY KEY (uid, product_id))`).run();
+          const rows = await env.DB.prepare(
+            `SELECT c.*, p.title, p.price_usd, p.image_url, p.seller_uid, u.handle as seller_handle
+             FROM cart_items c JOIN products p ON p.id = c.product_id
+             JOIN users u ON u.uid = p.seller_uid
+             WHERE c.uid = ? ORDER BY c.added_at DESC`
+          ).bind(uid).all();
+          return json({ items: rows.results || [] });
+        }
+        if (cm && method === 'POST') {
+          const uid = await guard(request, env, 60);
+          const body = await request.json() as Record<string, unknown>;
+          const pid = vStr(body.product_id, 'product_id', 1, 64);
+          const qty = Math.max(1, Math.min(99, Number(body.qty) || 1));
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS cart_items (
+            uid TEXT NOT NULL, product_id TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 1,
+            added_at INTEGER NOT NULL, PRIMARY KEY (uid, product_id))`).run();
+          await env.DB.prepare(
+            'INSERT INTO cart_items (uid, product_id, qty, added_at) VALUES (?, ?, ?, ?) ON CONFLICT(uid, product_id) DO UPDATE SET qty = qty + ?'
+          ).bind(uid, pid, qty, now(), qty).run();
+          return json({ ok: true });
+        }
+        if (cm && method === 'DELETE') {
+          const uid = await guard(request, env, 60);
+          const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+          if (body.product_id) {
+            await env.DB.prepare('DELETE FROM cart_items WHERE uid = ? AND product_id = ?').bind(uid, vStr(body.product_id, 'product_id', 1, 64)).run();
+          } else {
+            await env.DB.prepare('DELETE FROM cart_items WHERE uid = ?').bind(uid).run();
+          }
+          return json({ ok: true });
+        }
+      }
+      // ---------- shipments with tracking ----------
+      {
+        const sm = path.match(/^\/api\/market\/shipments$/);
+        if (sm && method === 'GET') {
+          const uid = await guard(request, env, 60);
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS nova_shipments (
+            id TEXT PRIMARY KEY, order_id TEXT NOT NULL, buyer_uid TEXT NOT NULL,
+            seller_uid TEXT NOT NULL, carrier TEXT NOT NULL, service TEXT NOT NULL,
+            tracking_number TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'label_created',
+            created_at INTEGER NOT NULL)`).run();
+          const rows = await env.DB.prepare(
+            `SELECT s.*, p.title as product_title FROM nova_shipments s
+             LEFT JOIN orders o ON o.id = s.order_id
+             LEFT JOIN products p ON p.id = o.product_id
+             WHERE s.buyer_uid = ? ORDER BY s.created_at DESC LIMIT 50`
+          ).bind(uid).all();
+          return json({ shipments: rows.results || [] });
+        }
+      }
+
       return json({ error: 'not_found' }, 404);
     } catch (e) {
       const err = e as { status?: number; message?: string };
