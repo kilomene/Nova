@@ -444,6 +444,124 @@ async function provisionDomainPurchase(env: Env, txRef: string): Promise<void> {
   await env.DB.prepare('UPDATE domain_purchases SET settled = 1 WHERE tx_ref = ?').bind(txRef).run();
 }
 
+
+// ---------- Buyer DNS management (security-guarded) ----------
+// Owners of active subdomains may manage A/CNAME/TXT records under their
+// own namespace only. NS/MX/SRV are never allowed (hijack/spam vectors).
+const DNS_ALLOWED_TYPES = ['A', 'CNAME', 'TXT'] as const;
+
+// Substring blocklist for CNAME targets: known phishing/impersonation lures.
+// Simple and strict by design — a blocked target fails closed (400).
+const DNS_TARGET_BLOCKLIST = [
+  'paypal', 'appleid', 'icloud', 'apple-pay', 'microsoft', 'office365',
+  'metamask', 'phantom', 'trustwallet', 'binance', 'coinbase', 'blockchain',
+  'chase', 'wellsfargo', 'bankofamerica', 'citi', 'usps', 'fedex', 'dhl',
+  'amazon', 'netflix', 'irs', 'verify-account', 'secure-login', 'account-update',
+];
+
+function isValidIPv4(ip: string): boolean {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return false;
+  return parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) >= 0 && Number(p) <= 255);
+}
+
+// DNS record name as seen by the buyer: '@' (the subdomain apex) or a single
+// label like 'www' / 'blog'. Dots are rejected so buyers cannot escape their
+// own namespace (no evil.other.com, no _dmarc tricks on the parent zone).
+function isValidDnsName(name: string): boolean {
+  if (name === '@') return true;
+  return /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(name);
+}
+
+function dnsFqdn(subdomain: string, name: string): string {
+  return name === '@' ? `${subdomain}.novamail.store` : `${name}.${subdomain}.novamail.store`;
+}
+
+function blocklistedTarget(host: string): boolean {
+  const h = host.toLowerCase();
+  return DNS_TARGET_BLOCKLIST.some((b) => h.includes(b));
+}
+
+interface DnsRecordRow {
+  id: string; subdomain_id: string; type: string; name: string;
+  content: string; ttl: number; cf_record_id: string; created_at: number;
+}
+
+async function ensureDnsTables(db: D1Database): Promise<void> {
+  await ensureSubdomainTables(db);
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS dns_records (
+      id TEXT PRIMARY KEY,
+      subdomain_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      ttl INTEGER NOT NULL DEFAULT 3600,
+      cf_record_id TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    )`),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_dns_records_sub ON dns_records(subdomain_id)'),
+    db.prepare(`CREATE TABLE IF NOT EXISTS dns_change_log (
+      id TEXT PRIMARY KEY,
+      subdomain_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      details TEXT NOT NULL DEFAULT '',
+      ip TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL
+    )`),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_dns_log_sub ON dns_change_log(subdomain_id, created_at)'),
+    db.prepare(`CREATE TABLE IF NOT EXISTS abuse_reports (
+      id TEXT PRIMARY KEY,
+      subdomain TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      reporter_email TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at INTEGER NOT NULL
+    )`),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_abuse_reports_status ON abuse_reports(status, created_at)'),
+  ]);
+}
+
+async function dnsLog(db: D1Database, subdomainId: string, action: string, details: string, ip: string): Promise<void> {
+  await db.prepare(
+    'INSERT INTO dns_change_log (id, subdomain_id, action, details, ip, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(newId(), subdomainId, action, details.slice(0, 500), ip.slice(0, 64), now()).run();
+}
+
+// Max 10 add/delete changes per rolling 24h per subdomain. Throws 429.
+async function dnsChangeQuota(db: D1Database, subdomainId: string): Promise<void> {
+  const r = await db.prepare(
+    "SELECT COUNT(*) AS c FROM dns_change_log WHERE subdomain_id = ? AND action IN ('add', 'delete') AND created_at > ?"
+  ).bind(subdomainId, now() - 86400000).first<{ c: number }>();
+  if ((r?.c || 0) >= 10) throw httpError(429, 'dns_rate_limited');
+}
+
+// Generalized Cloudflare DNS create for buyer-managed records.
+// A/CNAME are proxied (Cloudflare forces ttl=1/auto when proxied);
+// TXT is DNS-only with the requested ttl.
+async function cfDnsCreateTyped(env: Env, type: string, name: string, content: string, ttl: number): Promise<string> {
+  const token = env.CLOUDFLARE_DNS_TOKEN;
+  if (!token) throw httpError(500, 'dns_not_configured');
+  const proxied = type !== 'TXT';
+  const r = await fetch(`https://api.cloudflare.com/client/v4/zones/${DOMAIN_ZONE_ID}/dns_records`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type, name, content, ttl: proxied ? 1 : ttl, proxied }),
+  });
+  const d = (await r.json()) as { success: boolean; result?: { id: string }; errors?: Array<{ code: number }> };
+  if (d.success && d.result?.id) return d.result.id;
+  console.error('cf dns typed create failed');
+  throw httpError(502, 'dns_provision_failed');
+}
+
+// Look up an owned subdomain row (any status) for DNS management.
+async function ownedSubdomain(db: D1Database, name: string, email: string): Promise<{ id: string; subdomain: string; owner_email: string; status: string }> {
+  const sub = await db.prepare('SELECT id, subdomain, owner_email, status FROM subdomains WHERE subdomain = ?')
+    .bind(name).first<{ id: string; subdomain: string; owner_email: string; status: string }>();
+  if (!sub || sub.owner_email !== email) throw httpError(404, 'domain_not_found');
+  return sub;
+}
+
 // Marketplace page for domains.novamail.store. Self-contained HTML/JS:
 // search availability, buy via Flutterwave hosted checkout, renew, and list
 // "my domains" by email. No Nova account required.
@@ -534,6 +652,42 @@ h2{font-size:17px;margin:22px 0 10px}
 <div id="myList"></div>
 </div>
 
+<div class="card" id="dnsCard" style="display:none">
+<h2 style="margin-top:0">Manage DNS — <span id="dnsSub"></span></h2>
+<div class="status" id="dnsStatus"></div>
+<div id="dnsList"></div>
+<h2>Add record</h2>
+<div class="hint">Allowed: <b>A</b>, <b>CNAME</b>, <b>TXT</b> only — NS/MX/SRV are blocked.<br>Max 10 changes per 24h. All changes are logged.</div>
+<label>Type</label>
+<select id="dnsType" style="width:100%;background:#0e0e13;border:1px solid #2c2c36;border-radius:10px;color:#fff;padding:12px 14px;font-size:16px;margin-bottom:12px">
+<option value="A">A — IPv4 address</option>
+<option value="CNAME">CNAME — hostname</option>
+<option value="TXT">TXT — text</option>
+</select>
+<label>Name <span style="color:#6a6a75">(@ = your subdomain itself, or a label like www)</span></label>
+<input id="dnsName" placeholder="@" autocapitalize="off" autocomplete="off" spellcheck="false">
+<label>Content</label>
+<input id="dnsContent" placeholder="A: 93.184.216.34 · CNAME: example.com · TXT: some text" autocapitalize="off" autocomplete="off" spellcheck="false">
+<label>TTL <span style="color:#6a6a75">(seconds, 60–86400)</span></label>
+<input id="dnsTtl" placeholder="3600" inputmode="numeric" autocomplete="off">
+<button class="btn" id="dnsAddBtn" onclick="dnsAdd()">Add record</button>
+<button class="btn ghost" onclick="document.getElementById('dnsCard').style.display='none'">Close</button>
+<p class="small">Security: phishing/impersonation targets are blocked, NS/MX/SRV never allowed,<br>abuse is suspended immediately.</p>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Report abuse</h2>
+<div class="hint">See phishing, malware or impersonation on a .novamail.store name? Tell us.</div>
+<label>Subdomain</label>
+<input id="repSub" placeholder="e.g. badactor" autocapitalize="off" autocomplete="off" spellcheck="false">
+<label>What happened?</label>
+<textarea id="repReason" rows="3" placeholder="Describe the abuse…" style="width:100%;background:#0e0e13;border:1px solid #2c2c36;border-radius:10px;color:#fff;padding:12px 14px;font-size:16px;margin-bottom:12px;font-family:inherit"></textarea>
+<label>Your email (optional)</label>
+<input id="repEmail" type="email" placeholder="you@example.com" autocomplete="email">
+<button class="btn ghost" id="repBtn" onclick="reportAbuse()">Submit report</button>
+<div class="status" id="repStatus"></div>
+</div>
+
 <p class="small">Secure payment by Flutterwave — cards, bank transfer and mobile money.<br>Subdomains are DNS CNAME records on novamail.store.</p>
 </div>
 <script>
@@ -603,12 +757,98 @@ async function myDomains(){
     d.domains.forEach(function(x){
       var exp=new Date(x.expires_at).toLocaleDateString();
       var st=x.status==='active'?'Active · renews '+exp:x.status;
-      html+='<div class="dom"><div><div class="n">'+x.fqdn+'</div><div class="m">'+st+' · $'+x.price_monthly+'/mo</div></div>'+
-        (x.status==='active'?'<button onclick="renew(\\''+x.subdomain+'\\',\\''+email.replace(/\\'/g,"")+'\\')">Renew</button>':'')+'</div>';
+      html+='<div class="dom"><div><div class="n">'+x.fqdn+'</div><div class="m">'+st+' · $'+x.price_monthly+'/mo</div></div><div style="display:flex;gap:8px">'+
+        (x.status==='active'?'<button onclick="dnsManage(\\''+x.subdomain+'\\',\\''+email.replace(/\\'/g,"")+'\\')">DNS</button>':'')+
+        (x.status==='active'?'<button onclick="renew(\\''+x.subdomain+'\\',\\''+email.replace(/\\'/g,"")+'\\')">Renew</button>':'')+'</div></div>';
     });
     document.getElementById('myList').innerHTML=html;
   }catch(e){setStatus('myStatus','Load failed: '+String(e.message||e),'err');}
 }
+var dnsCtx={sub:'',email:''};
+function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function dnsManage(sub,email){
+  dnsCtx={sub:sub,email:email};
+  document.getElementById('dnsSub').textContent=sub+'.novamail.store';
+  document.getElementById('dnsCard').style.display='block';
+  dnsLoad();
+  document.getElementById('dnsCard').scrollIntoView();
+}
+async function dnsLoad(){
+  setStatus('dnsStatus','Loading…','');
+  document.getElementById('dnsList').innerHTML='';
+  try{
+    var r=await fetch('/api/domains/dns?subdomain='+encodeURIComponent(dnsCtx.sub)+'&email='+encodeURIComponent(dnsCtx.email));
+    var d=await r.json();
+    if(!r.ok)throw new Error(d.error||'load_failed');
+    setStatus('dnsStatus','','');
+    if(!d.records.length){document.getElementById('dnsList').innerHTML='<p class="small">No custom records yet. Your subdomain currently points where you set it at purchase.</p>';return;}
+    var html='<table>';
+    d.records.forEach(function(x){
+      html+='<tr><td><b>'+escH(x.type)+'</b> '+escH(x.fqdn)+'<br><span style="color:#6a6a75;font-size:12px">'+escH(x.content)+'</span></td>'+
+        '<td><button class="btn ghost" style="margin:0;padding:6px 12px" onclick="dnsDel(\\''+x.id+'\\')">Delete</button></td></tr>';
+    });
+    html+='</table>';
+    document.getElementById('dnsList').innerHTML=html;
+  }catch(e){setStatus('dnsStatus','Load failed: '+String(e.message||e),'err');}
+}
+async function dnsAdd(){
+  var type=document.getElementById('dnsType').value;
+  var name=document.getElementById('dnsName').value.trim()||'@';
+  var content=document.getElementById('dnsContent').value.trim();
+  var ttl=document.getElementById('dnsTtl').value.trim();
+  if(!content){setStatus('dnsStatus','Enter the record content.','err');return;}
+  var btn=document.getElementById('dnsAddBtn');btn.disabled=true;btn.textContent='Adding…';
+  try{
+    var body={subdomain:dnsCtx.sub,email:dnsCtx.email,type:type,name:name,content:content};
+    if(ttl)body.ttl=Number(ttl);
+    var r=await fetch('/api/domains/dns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok)throw new Error(d.error||'add_failed');
+    setStatus('dnsStatus','Record added — DNS can take a minute to propagate.','ok');
+    document.getElementById('dnsContent').value='';
+    dnsLoad();
+  }catch(e){
+    var msg=String(e.message||e);
+    if(msg==='target_blocklisted')msg='That target looks like a phishing/impersonation lure and is blocked.';
+    else if(msg==='dns_rate_limited')msg='Too many changes — max 10 per 24h.';
+    else if(msg==='invalid_record_name')msg='Name must be @ or a single label (e.g. www).';
+    setStatus('dnsStatus','Add failed: '+msg,'err');
+  }
+  btn.disabled=false;btn.textContent='Add record';
+}
+async function dnsDel(id){
+  if(!confirm('Delete this DNS record?'))return;
+  try{
+    var r=await fetch('/api/domains/dns/'+encodeURIComponent(id),{method:'DELETE',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({subdomain:dnsCtx.sub,email:dnsCtx.email})});
+    var d=await r.json();
+    if(!r.ok)throw new Error(d.error||'delete_failed');
+    setStatus('dnsStatus','Record deleted.','ok');
+    dnsLoad();
+  }catch(e){setStatus('dnsStatus','Delete failed: '+String(e.message||e),'err');}
+}
+async function reportAbuse(){
+  var sub=cleanName(document.getElementById('repSub').value);
+  var reason=document.getElementById('repReason').value.trim();
+  var email=document.getElementById('repEmail').value.trim();
+  if(!sub){setStatus('repStatus','Enter the subdomain.','err');return;}
+  if(reason.length<5){setStatus('repStatus','Describe what happened (min 5 characters).','err');return;}
+  var btn=document.getElementById('repBtn');btn.disabled=true;btn.textContent='Sending…';
+  try{
+    var r=await fetch('/api/domains/report',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({subdomain:sub,reason:reason,reporter_email:email||undefined})});
+    var d=await r.json();
+    if(!r.ok)throw new Error(d.error||'report_failed');
+    setStatus('repStatus','Thanks — report received. We review abuse reports promptly.','ok');
+    document.getElementById('repReason').value='';
+  }catch(e){setStatus('repStatus','Report failed: '+String(e.message||e),'err');}
+  btn.disabled=false;btn.textContent='Submit report';
+}
+// Pre-fill the abuse form from ?report=<subdomain> (linked from parked pages).
+(function(){
+  var q=new URLSearchParams(location.search);
+  if(q.get('report')){document.getElementById('repSub').value=cleanName(q.get('report'));document.getElementById('repSub').scrollIntoView();}
+})();
 // If the buyer just returned from Flutterwave (?tx_ref=&transaction_id=&status=),
 // confirm the payment server-side.
 (async function(){
@@ -937,10 +1177,36 @@ a{color:#D4AF37;font-size:18px;text-decoration:none}
           await ensureSubdomainTables(env.DB);
           const label = host.slice(0, -'.novamail.store'.length);
           const row = await env.DB.prepare(
-            "SELECT subdomain FROM subdomains WHERE subdomain = ? AND status = 'active' AND expires_at > ?"
-          ).bind(label, now()).first<{ subdomain: string }>();
-          if (!row) throw httpError(404, 'not_found');
+            'SELECT subdomain, status FROM subdomains WHERE subdomain = ? AND expires_at > ?'
+          ).bind(label, now()).first<{ subdomain: string; status: string }>();
+          if (!row || (row.status !== 'active' && row.status !== 'suspended')) throw httpError(404, 'not_found');
           const safe = escHtml(row.subdomain);
+          if (row.status === 'suspended') {
+            const suspHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${safe}.novamail.store — suspended</title>
+<style>
+body{background:#0b0b0f;color:#fff;font-family:system-ui,-apple-system,sans-serif;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}
+h1{font-size:24px;margin:0 0 8px}
+p{color:#9a9aa5}
+a{color:#D4AF37;text-decoration:none;font-size:13px}
+</style>
+</head>
+<body>
+<div>
+<h1>${safe}.novamail.store</h1>
+<p>This subdomain has been suspended for abuse.</p>
+<p><a href="https://domains.novamail.store/?report=${safe}">Report abuse</a> · <a href="https://domains.novamail.store">Nova Domains</a></p>
+</div>
+</body>
+</html>`;
+            return new Response(suspHtml, {
+              headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff' },
+            });
+          }
           const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -958,6 +1224,7 @@ a{color:#D4AF37;text-decoration:none}
 <div>
 <h1>${safe}.novamail.store</h1>
 <p>Coming soon.</p>
+<p style="margin-top:18px"><a href="https://domains.novamail.store/?report=${safe}" style="font-size:12px;color:#6a6a75">Report abuse</a></p>
 <p><a href="https://domains.novamail.store">Get your own subdomain</a></p>
 </div>
 </body>
@@ -3048,6 +3315,132 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
             expires_at: r.expires_at,
           })),
         });
+      }
+
+
+      // ---------- Buyer DNS management (email-ownership verified) ----------
+      // Only A/CNAME/TXT. NS/MX/SRV are rejected by vEnum (fail closed).
+      if (path === '/api/domains/dns' && method === 'GET') {
+        await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 30, 60);
+        await ensureDnsTables(env.DB);
+        const name = (`${url.searchParams.get('subdomain') || ''}`).toLowerCase().trim().replace(/\.novamail\.store$/, '');
+        const email = vStr(url.searchParams.get('email'), 'email', 3, 120).toLowerCase();
+        const sub = await ownedSubdomain(env.DB, name, email);
+        const rows = await env.DB.prepare(
+          'SELECT id, type, name, content, ttl, created_at FROM dns_records WHERE subdomain_id = ? ORDER BY created_at ASC LIMIT 100'
+        ).bind(sub.id).all<DnsRecordRow>();
+        return json({
+          subdomain: sub.subdomain,
+          fqdn: `${sub.subdomain}.novamail.store`,
+          status: sub.status,
+          records: rows.results.map((r) => ({
+            id: r.id, type: r.type, name: r.name,
+            fqdn: dnsFqdn(sub.subdomain, r.name),
+            content: r.content, ttl: r.ttl, created_at: r.created_at,
+          })),
+        });
+      }
+      if (path === '/api/domains/dns' && method === 'POST') {
+        await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 20, 60);
+        await ensureDnsTables(env.DB);
+        const dip = request.headers.get('cf-connecting-ip') || 'unknown-ip';
+        const b = await readJson(request) as Record<string, unknown>;
+        const name = (`${b.subdomain || ''}`).toLowerCase().trim().replace(/\.novamail\.store$/, '');
+        const email = vStr(b.email, 'email', 3, 120).toLowerCase();
+        const type = vEnum(`${b.type || ''}`.toUpperCase(), DNS_ALLOWED_TYPES, 'type');
+        const recName = `${b.name === undefined || b.name === null || `${b.name}`.trim() === '' ? '@' : b.name}`.toLowerCase().trim();
+        const rawContent = `${b.content || ''}`.trim();
+        const ttl = (b.ttl === undefined || b.ttl === null || `${b.ttl}`.trim() === '') ? 3600 : vNum(Number(b.ttl), 'ttl', 60, 86400);
+        if (!isValidDnsName(recName)) throw httpError(400, 'invalid_record_name');
+        const sub = await ownedSubdomain(env.DB, name, email);
+        if (sub.status !== 'active') throw httpError(403, 'domain_not_active');
+        // Per-type content validation.
+        let content = rawContent;
+        if (type === 'A') {
+          if (!isValidIPv4(content)) throw httpError(400, 'invalid_ipv4');
+        } else if (type === 'CNAME') {
+          content = content.toLowerCase().replace(/^https?:\/\//, '').split('/')[0].split(':')[0].split('?')[0];
+          if (!isValidHostname(content)) throw httpError(400, 'invalid_hostname');
+          if (content === 'novamail.store' || content.endsWith('.novamail.store')) throw httpError(400, 'target_not_allowed');
+          if (blocklistedTarget(content)) throw httpError(400, 'target_blocklisted');
+        } else {
+          if (!content || content.length > 255 || /[\r\n]/.test(content)) throw httpError(400, 'invalid_txt');
+        }
+        await dnsChangeQuota(env.DB, sub.id);
+        const fqdn = dnsFqdn(sub.subdomain, recName);
+        const cfId = await cfDnsCreateTyped(env, type, fqdn, content, ttl);
+        const id = newId();
+        await env.DB.prepare(
+          'INSERT INTO dns_records (id, subdomain_id, type, name, content, ttl, cf_record_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(id, sub.id, type, recName, content, ttl, cfId, now()).run();
+        await dnsLog(env.DB, sub.id, 'add', `${type} ${fqdn} -> ${content.slice(0, 120)}`, dip);
+        return json({ ok: true, id });
+      }
+      if (path.startsWith('/api/domains/dns/') && method === 'DELETE') {
+        await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 20, 60);
+        await ensureDnsTables(env.DB);
+        const dip = request.headers.get('cf-connecting-ip') || 'unknown-ip';
+        const recId = vStr(decodeURIComponent(path.slice('/api/domains/dns/'.length)), 'id', 1, 64);
+        const b = await readJson(request) as Record<string, unknown>;
+        const name = (`${b.subdomain || ''}`).toLowerCase().trim().replace(/\.novamail\.store$/, '');
+        const email = vStr(b.email, 'email', 3, 120).toLowerCase();
+        const sub = await ownedSubdomain(env.DB, name, email);
+        if (sub.status !== 'active') throw httpError(403, 'domain_not_active');
+        const rec = await env.DB.prepare(
+          'SELECT id, type, name, content, cf_record_id FROM dns_records WHERE id = ? AND subdomain_id = ?'
+        ).bind(recId, sub.id).first<DnsRecordRow>();
+        if (!rec) throw httpError(404, 'record_not_found');
+        await dnsChangeQuota(env.DB, sub.id);
+        await cfDnsDelete(env, rec.cf_record_id);
+        await env.DB.prepare('DELETE FROM dns_records WHERE id = ?').bind(rec.id).run();
+        await dnsLog(env.DB, sub.id, 'delete', `${rec.type} ${dnsFqdn(sub.subdomain, rec.name)}`, dip);
+        return json({ ok: true });
+      }
+      // ---------- Abuse reports (public) ----------
+      if (path === '/api/domains/report' && method === 'POST') {
+        await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 10, 60);
+        await ensureDnsTables(env.DB);
+        const b = await readJson(request) as Record<string, unknown>;
+        const name = (`${b.subdomain || ''}`).toLowerCase().trim().replace(/\.novamail\.store$/, '');
+        const reason = vStr(b.reason, 'reason', 5, 500);
+        const reporterRaw = `${b.reporter_email || ''}`.trim();
+        const reporter = reporterRaw === '' ? '' : vStr(reporterRaw, 'reporter_email', 3, 120).toLowerCase();
+        if (reporter && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(reporter)) throw httpError(400, 'email_invalid');
+        if (!isValidSubdomain(name)) throw httpError(400, 'invalid_name');
+        const sub = await env.DB.prepare('SELECT id FROM subdomains WHERE subdomain = ?').bind(name).first();
+        if (!sub) throw httpError(404, 'domain_not_found');
+        await env.DB.prepare(
+          "INSERT INTO abuse_reports (id, subdomain, reason, reporter_email, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)"
+        ).bind(newId(), name, reason, reporter, now()).run();
+        return json({ ok: true });
+      }
+      // ---------- Admin: suspend a subdomain (abuse). Deletes ALL DNS. ----------
+      if (path === '/api/admin/domains/suspend' && method === 'POST') {
+        await adminGuard(request, env);
+        await ensureDnsTables(env.DB);
+        const b = await readJson(request) as Record<string, unknown>;
+        const name = (`${b.subdomain || ''}`).toLowerCase().trim().replace(/\.novamail\.store$/, '');
+        const sub = await env.DB.prepare('SELECT id, dns_record_id FROM subdomains WHERE subdomain = ?')
+          .bind(name).first<{ id: string; dns_record_id: string }>();
+        if (!sub) throw httpError(404, 'domain_not_found');
+        await cfDnsDelete(env, sub.dns_record_id);
+        const recs = await env.DB.prepare('SELECT id, cf_record_id FROM dns_records WHERE subdomain_id = ?')
+          .bind(sub.id).all<{ id: string; cf_record_id: string }>();
+        for (const r of recs.results) await cfDnsDelete(env, r.cf_record_id);
+        await env.DB.prepare('DELETE FROM dns_records WHERE subdomain_id = ?').bind(sub.id).run();
+        await env.DB.prepare("UPDATE subdomains SET status = 'suspended', dns_record_id = '' WHERE id = ?").bind(sub.id).run();
+        await env.DB.prepare("UPDATE abuse_reports SET status = 'actioned' WHERE subdomain = ? AND status = 'open'").bind(name).run();
+        await dnsLog(env.DB, sub.id, 'suspend', 'admin suspension', 'admin');
+        return json({ ok: true });
+      }
+      if (path === '/api/admin/domains/reports' && method === 'GET') {
+        await adminGuard(request, env);
+        await ensureDnsTables(env.DB);
+        const status = vEnum(`${url.searchParams.get('status') || 'open'}`, ['open', 'actioned', 'dismissed'] as const, 'status');
+        const rows = await env.DB.prepare(
+          'SELECT id, subdomain, reason, reporter_email, status, created_at FROM abuse_reports WHERE status = ? ORDER BY created_at DESC LIMIT 100'
+        ).bind(status).all();
+        return json({ reports: rows.results });
       }
 
       // ---------- Flutterwave (server-side only) ----------
