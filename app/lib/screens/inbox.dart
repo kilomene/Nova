@@ -51,7 +51,16 @@ class _InboxScreenState extends State<InboxScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AppState>().loadThreads();
       _loadAll();
+      if (mounted) context.read<AppState>().registerRefreshHandler('inbox', _refresh);
     });
+  }
+
+  @override
+  void dispose() {
+    try {
+      context.read<AppState>().unregisterRefreshHandler('inbox');
+    } catch (_) {}
+    super.dispose();
   }
 
   Future<void> _loadAll() async {
