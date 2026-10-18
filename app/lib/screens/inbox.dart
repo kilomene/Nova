@@ -1266,6 +1266,11 @@ class _ChatScreenState extends State<ChatScreen> {
             icon: Icon(Icons.camera_alt_outlined, color: sub),
             onPressed: () => _takePhoto(context),
           ),
+          IconButton(
+            tooltip: 'Gallery',
+            icon: Icon(Icons.image_outlined, color: sub),
+            onPressed: () => _pickAttachment(context),
+          ),
           Expanded(
             child: TextField(
               controller: _ctrl,
@@ -1283,16 +1288,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           ),
-          IconButton(
-            tooltip: 'Attach photo',
-            icon: Icon(Icons.image_outlined, color: sub),
-            onPressed: () => _pickAttachment(context),
-          ),
-          IconButton(
-            tooltip: 'Sticker',
-            icon: Icon(Icons.emoji_emotions_outlined, color: sub),
-            onPressed: _showEmojiSheet,
-          ),
+          // Mic at extreme right; becomes Send when typing (WhatsApp-style)
           ValueListenableBuilder<TextEditingValue>(
             valueListenable: _ctrl,
             builder: (context, v, _) {
@@ -1304,12 +1300,16 @@ class _ChatScreenState extends State<ChatScreen> {
                   onPressed: () => _sendText(state, myUid),
                 );
               }
-              return IconButton(
-                tooltip: _recording ? 'Stop recording' : 'Voice message',
-                icon: Icon(
-                    _recording ? Icons.stop_circle : Icons.mic_none_outlined,
-                    color: _recording ? Colors.redAccent : sub),
-                onPressed: () => _toggleVoiceRecording(context),
+              return GestureDetector(
+                onLongPressStart: (_) => _startVoiceRecording(context),
+                onLongPressEnd: (_) => _stopVoiceRecording(context),
+                child: IconButton(
+                  tooltip: 'Hold to record voice message',
+                  icon: Icon(
+                      _recording ? Icons.mic : Icons.mic_none_outlined,
+                      color: _recording ? Colors.redAccent : sub),
+                  onPressed: () {},
+                ),
               );
             },
           ),
@@ -1429,6 +1429,23 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } else {
       setState(() => _recording = true);
+    }
+  }
+
+  /// WhatsApp-style: long-press mic to start recording.
+  void _startVoiceRecording(BuildContext context) {
+    setState(() => _recording = true);
+    // TODO: Start actual audio recording via `record` package.
+  }
+
+  /// WhatsApp-style: release to send automatically.
+  void _stopVoiceRecording(BuildContext context) {
+    if (!_recording) return;
+    setState(() => _recording = false);
+    // TODO: Stop recording and send the voice message.
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Voice message — coming in next build')));
     }
   }
 
