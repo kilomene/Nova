@@ -2935,6 +2935,14 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
 
       // ---------- subdomain marketplace API (public, no auth) ----------
       // Email-based: anyone can buy, no Nova account needed.
+      // Also serve the marketplace at the /domains path on any host (handy for
+      // testing before the domains.novamail.store DNS/route is live).
+      if (path === '/domains' && method === 'GET') {
+        await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 60, 60);
+        return new Response(domainMarketplaceHtml(), {
+          headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff' },
+        });
+      }
       if (path === '/api/domains/check' && method === 'GET') {
         await rateCheck(env.RATELIMIT, `ip:${request.headers.get('cf-connecting-ip') || 'x'}`, 60, 60);
         const name = (`${url.searchParams.get('name') || ''}`).toLowerCase().trim().replace(/\.novamail\.store$/, '');
