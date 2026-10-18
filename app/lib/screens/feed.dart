@@ -163,9 +163,12 @@ class VideoCard extends StatefulWidget {
   State<VideoCard> createState() => _VideoCardState();
 }
 
-class _VideoCardState extends State<VideoCard> {
+class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
   VideoPlayerController? _c;
   bool _showHeart = false;
+  late AnimationController _heartController;
+  late Animation<double> _heartScale;
+  late Animation<double> _heartOpacity;
   bool _saved = false;
   String? _error;
   double _speed = 1.0;
@@ -175,6 +178,19 @@ class _VideoCardState extends State<VideoCard> {
   @override
   void initState() {
     super.initState();
+    _heartController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _heartScale = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _heartController, curve: Curves.elasticOut),
+    );
+    _heartOpacity = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _heartController,
+        curve: const Interval(0.5, 1.0, curve: Curves.easeOut),
+      ),
+    );
     _init();
     widget.currentIndex.addListener(_onIndex);
   }
@@ -204,6 +220,7 @@ class _VideoCardState extends State<VideoCard> {
 
   @override
   void dispose() {
+    _heartController.dispose();
     widget.currentIndex.removeListener(_onIndex);
     _c?.dispose();
     super.dispose();
@@ -213,7 +230,8 @@ class _VideoCardState extends State<VideoCard> {
     final state = context.read<AppState>();
     if (!widget.video.likedByMe) state.toggleLike(widget.video);
     setState(() => _showHeart = true);
-    Future.delayed(const Duration(milliseconds: 700), () {
+    _heartController.forward(from: 0.0);
+    Future.delayed(const Duration(milliseconds: 800), () {
       if (mounted) setState(() => _showHeart = false);
     });
   }
@@ -271,7 +289,18 @@ class _VideoCardState extends State<VideoCard> {
               ),
             ),
           if (_showHeart)
-            const Center(child: Icon(Icons.favorite, size: 110, color: Colors.redAccent)),
+            Center(
+              child: AnimatedBuilder(
+                animation: _heartController,
+                builder: (context, child) => Opacity(
+                  opacity: _heartOpacity.value,
+                  child: Transform.scale(
+                    scale: _heartScale.value,
+                    child: const Icon(Icons.favorite, size: 120, color: Colors.redAccent),
+                  ),
+                ),
+              ),
+            ),
           if (!_clearDisplay)
           // right action rail
           Positioned(
@@ -294,13 +323,13 @@ class _VideoCardState extends State<VideoCard> {
                 _RailButton(
                   iconWidget: NovaIcon.heart(
                       active: v.likedByMe,
-                      size: 30,
+                      size: 36,
                       color: v.likedByMe ? Colors.redAccent : Colors.white),
                   label: _fmt(v.likeCount),
                   onTap: () => state.toggleLike(v),
                 ),
                 _RailButton(
-                  iconWidget: const NovaIcon.comment(size: 30),
+                  iconWidget: const NovaIcon.comment(size: 36),
                   label: _fmt(v.commentCount),
                   onTap: () => showModalBottomSheet(
                     context: context,
