@@ -296,6 +296,9 @@ const DOMAIN_RESERVED = new Set([
   'ftp', 'dns', 'ns1', 'ns2', 'webmail', 'smtp', 'pop', 'imap', 'secure',
   'login', 'account', 'billing', 'pay', 'payment', 'checkout', 'coins',
   'nova', 'user', 'users', 'domains', 'domain', 'root', 'localhost',
+  // Osh's personal subdomains — never for sale
+  'profile', 'marketplace', 'card', 'forex', 'acp-relay', 'browser',
+  'desk', 'room', 'ssh', 'termux', 'termux-ssh', 'uaht',
 ]);
 
 // Premium pricing by length: short names cost more.
