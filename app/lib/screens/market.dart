@@ -22,7 +22,27 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => context.read<AppState>().loadListings());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final st = context.read<AppState>();
+      st.loadListings();
+      if (mounted) st.registerRefreshHandler('shop', refresh);
+    });
+  }
+
+  @override
+  void dispose() {
+    _q.dispose();
+    try {
+      context.read<AppState>().unregisterRefreshHandler('shop');
+    } catch (_) {}
+    super.dispose();
+  }
+
+  /// Public refresh entry: pull-to-refresh + bottom-nav re-tap.
+  Future<void> refresh() async {
+    await context.read<AppState>().loadListings(
+      query: _q.text.trim().isEmpty ? null : _q.text.trim(),
+    );
   }
 
   @override
@@ -73,9 +93,18 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
             ),
           ),
           Expanded(
-            child: state.listings.isEmpty
-                ? Center(child: Text('No products yet — list the first one.', style: TextStyle(color: sub)))
-                : GridView.builder(
+            child: RefreshIndicator(
+              color: Theme.of(context).colorScheme.primary,
+              onRefresh: refresh,
+              child: state.listings.isEmpty
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+                        Center(child: Text('No products yet — list the first one.', style: TextStyle(color: sub))),
+                      ],
+                    )
+                  : GridView.builder(
                     padding: const EdgeInsets.all(12),
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: 0.75, crossAxisSpacing: 10, mainAxisSpacing: 10),
                     itemCount: state.listings.length,
@@ -121,6 +150,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                       );
                     },
                   ),
+            ),
           ),
         ],
       ),
