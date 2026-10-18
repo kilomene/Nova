@@ -139,7 +139,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         actions: [
           if (widget.self) ...[
             IconButton(
-              icon: Icon(Icons.visibility_outlined, color: fg),
+              icon: CustomPaint(size: const Size(24, 24), painter: _FootprintPainter(color: fg)),
               tooltip: 'Profile views',
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -813,4 +813,43 @@ class _ProfileVideoViewerState extends State<_ProfileVideoViewer> {
       ),
     );
   }
+}
+
+
+/// Custom footprint icon painter (two footprints like TikTok's profile views icon).
+class _FootprintPainter extends CustomPainter {
+  final Color color;
+  _FootprintPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final s = size.width / 24;
+    // Left footprint
+    _drawFoot(canvas, paint, s, 7, 12, -0.15);
+    // Right footprint
+    _drawFoot(canvas, paint, s, 16, 12, 0.15);
+  }
+
+  void _drawFoot(Canvas canvas, Paint paint, double s, double cx, double cy, double angle) {
+    canvas.save();
+    canvas.translate(cx * s, cy * s);
+    canvas.rotate(angle);
+    // Sole
+    canvas.drawOval(Rect.fromCenter(center: Offset(0, 3 * s), width: 6 * s, height: 9 * s), paint);
+    // Toes
+    for (int i = 0; i < 4; i++) {
+      final tx = (-2.2 + i * 1.5) * s;
+      final ty = (-3.5 - (i == 1 || i == 2 ? 0.8 : 0)) * s;
+      canvas.drawCircle(Offset(tx, ty), 1.1 * s, paint);
+    }
+    // Big toe
+    canvas.drawCircle(Offset(2.8 * s, -3.2 * s), 1.4 * s, paint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
