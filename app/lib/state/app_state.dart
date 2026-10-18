@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
@@ -38,6 +39,43 @@ class AppState extends ChangeNotifier {
 
   NovaUser? me;
   bool followersLoaded = false;
+
+  // ---------------- tab refresh registry ----------------
+  // Screens register their refresh callbacks here; MainShell triggers them
+  // when the user re-taps the already-active bottom nav tab.
+  final Map<String, Future<void> Function()> _refreshHandlers = {};
+
+  void registerRefreshHandler(String key, Future<void> Function() handler) {
+    _refreshHandlers[key] = handler;
+  }
+
+  void unregisterRefreshHandler(String key) {
+    _refreshHandlers.remove(key);
+  }
+
+  Future<void> requestRefresh(String key) async {
+    final h = _refreshHandlers[key];
+    if (h != null) {
+      try {
+        await h();
+      } catch (_) {}
+    }
+  }
+
+  // ---------------- realtime polling fallback ----------------
+  // WebSocket is the primary realtime channel; this 30s poll keeps the feed
+  // fresh when the socket drops or the backend doesn't broadcast an event.
+  Timer? _pollTimer;
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    if (isDemo) return;
+    _pollTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+      try {
+        await loadFeed(silent: true);
+      } catch (_) {}
+    });
+  }
   int myFollowerCount = 0;
   final Set<String> followingUids = {};
 
@@ -198,6 +236,7 @@ class AppState extends ChangeNotifier {
       await sync.connect(wsBase: wsBase, tokenProvider: () => auth.idToken());
       sync.events.listen(_onSyncEvent);
       await push.init(api);
+      _startPolling();
     }
     notifyListeners();
   }
@@ -284,6 +323,16 @@ class AppState extends ChangeNotifier {
       case 'kyc':
         kyc.refresh(api);
         break;
+      case 'like':
+      case 'comment':
+      case 'follow':
+      case 'video':
+        // Social events: refresh feed silently so counts/content update live.
+        loadFeed(silent: true);
+        break;
+      case 'verification':
+        _refreshVerification();
+        break;
       case 'escrow':
       case 'order':
         break;
@@ -292,9 +341,11 @@ class AppState extends ChangeNotifier {
 
   // ---------------- feed ----------------
 
-  Future<void> loadFeed({bool following = false}) async {
-    feedLoading = true;
-    notifyListeners();
+  Future<void> loadFeed({bool following = false, bool silent = false}) async {
+    if (!silent) {
+      feedLoading = true;
+      notifyListeners();
+    }
     try {
       if (isDemo) {
         final seeds = AppConfig.seedVideos.map((s) {
