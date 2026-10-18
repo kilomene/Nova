@@ -42,12 +42,24 @@ class _ProfileScreenState extends State<ProfileScreen>
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
     _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<AppState>().registerRefreshHandler('profile', refresh);
+    });
   }
 
   @override
   void dispose() {
     _tabs.dispose();
+    try {
+      context.read<AppState>().unregisterRefreshHandler('profile');
+    } catch (_) {}
     super.dispose();
+  }
+
+  /// Public refresh entry: pull-to-refresh + bottom-nav re-tap.
+  Future<void> refresh() async {
+    await _load();
+    if (mounted) setState(() {});
   }
 
   Future<void> _load() async {
@@ -175,7 +187,10 @@ class _ProfileScreenState extends State<ProfileScreen>
           ],
         ],
       ),
-      body: NestedScrollView(
+      body: RefreshIndicator(
+        color: Theme.of(context).colorScheme.primary,
+        onRefresh: refresh,
+        child: NestedScrollView(
         headerSliverBuilder: (context, _) => [
           SliverToBoxAdapter(
             child: Column(
@@ -529,6 +544,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
           ],
+        ),
         ),
       ),
     );
