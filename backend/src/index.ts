@@ -1123,6 +1123,16 @@ export default {
         }
       }
 
+      // ---------- ads.txt (public, no auth) ----------
+      // AdSense requires ads.txt at the root domain.
+      {
+        const host = (request.headers.get('host') || '').split(':')[0].toLowerCase();
+        if ((host === 'novamail.store' || host === 'www.novamail.store') && path === '/ads.txt' && method === 'GET') {
+          const txt = 'google.com, pub-2431202994591245, DIRECT, f08c47fec0942fa0\n';
+          return new Response(txt, { headers: { 'content-type': 'text/plain; charset=utf-8' } });
+        }
+      }
+
       // ---------- root domain verification page (public, no auth) ----------
       // AdSense requires verification at the top-level domain novamail.store.
       // Serve a simple page with the AdSense script so the crawler finds it.
