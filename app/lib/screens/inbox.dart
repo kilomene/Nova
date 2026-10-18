@@ -327,7 +327,7 @@ class _InboxScreenState extends State<InboxScreen> {
           MaterialPageRoute(builder: (_) => FollowListScreen(
             uidOrHandle: me != null && me.uid.isNotEmpty ? me.uid : (me != null && me.handle.isNotEmpty ? me.handle : 'me'),
             handle: me?.handle ?? '',
-            followers: true,
+            initialTab: FollowListTab.followers,
           )),
         );
       },
