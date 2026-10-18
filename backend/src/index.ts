@@ -4373,6 +4373,63 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         }
       }
 
+
+      // ---------- marketplace escrow checkout ----------
+      {
+        const cm = path.match(/^\/api\/market\/checkout$/);
+        if (cm && method === 'POST') {
+          const uid = await guard(request, env, 60);
+          const body = await request.json() as Record<string, unknown>;
+          const carrier = vStr(body.carrier, 'carrier', 1, 32); // 'easyship' | 'fedex' | 'ups'
+          const service = vStr(body.service, 'service', 1, 32); // 'express' | 'standard' | 'economy'
+          // Get cart items
+          const cart = await env.DB.prepare(
+            `SELECT c.*, p.price_usd, p.seller_uid, p.title, p.weight_kg
+             FROM cart_items c JOIN products p ON p.id = c.product_id WHERE c.uid = ?`
+          ).bind(uid).all();
+          const items = cart.results || [];
+          if (!items.length) throw httpError(400, 'cart_empty');
+          // Calculate subtotal
+          let subtotal = 0;
+          for (const it of items as any[]) subtotal += (it.price_usd || 0) * (it.qty || 1);
+          // Shipping: distance-based (simplified - real calc via carrier API)
+          // Base rates: domestic $5-15, international $25-80 by service level
+          const isIntl = body.is_international === true;
+          let shipping = 0;
+          if (service === 'express') shipping = isIntl ? 80 : 25;
+          else if (service === 'standard') shipping = isIntl ? 45 : 12;
+          else shipping = isIntl ? 25 : 5;
+          // Tax: 8% (simplified)
+          const tax = Math.round(subtotal * 0.08 * 100) / 100;
+          const total = Math.round((subtotal + shipping + tax) * 100) / 100;
+          // Nova commission: 5%
+          const commission = Math.round(subtotal * 0.05 * 100) / 100;
+          // Create escrow order
+          const orderId = 'ord_' + crypto.randomUUID().slice(0, 12);
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS market_orders (
+            id TEXT PRIMARY KEY, buyer_uid TEXT NOT NULL, total_usd REAL NOT NULL,
+            subtotal_usd REAL NOT NULL, shipping_usd REAL NOT NULL, tax_usd REAL NOT NULL,
+            commission_usd REAL NOT NULL, carrier TEXT NOT NULL, service TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'payment_pending', flutterwave_ref TEXT,
+            created_at INTEGER NOT NULL)`).run();
+          await env.DB.prepare(
+            'INSERT INTO market_orders (id, buyer_uid, total_usd, subtotal_usd, shipping_usd, tax_usd, commission_usd, carrier, service, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          ).bind(orderId, uid, total, subtotal, shipping, tax, commission, carrier, service, 'payment_pending', now()).run();
+          // Create order items
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS market_order_items (
+            id TEXT PRIMARY KEY, order_id TEXT NOT NULL, product_id TEXT NOT NULL,
+            seller_uid TEXT NOT NULL, qty INTEGER NOT NULL, price_usd REAL NOT NULL)`).run();
+          for (const it of items as any[]) {
+            await env.DB.prepare(
+              'INSERT INTO market_order_items (id, order_id, product_id, seller_uid, qty, price_usd) VALUES (?, ?, ?, ?, ?, ?)'
+            ).bind('oi_' + crypto.randomUUID().slice(0, 12), orderId, it.product_id, it.seller_uid, it.qty, it.price_usd).run();
+          }
+          // Clear cart
+          await env.DB.prepare('DELETE FROM cart_items WHERE uid = ?').bind(uid).run();
+          return json({ order_id: orderId, subtotal, shipping, tax, total, commission, currency: 'USD' });
+        }
+      }
+
       return json({ error: 'not_found' }, 404);
     } catch (e) {
       const err = e as { status?: number; message?: string };
