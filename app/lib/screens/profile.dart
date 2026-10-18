@@ -43,7 +43,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
+    _tabs = TabController(length: 4, vsync: this);
     _load();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<AppState>().registerRefreshHandler('profile', refresh);
@@ -117,6 +117,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
     final myVideos = state.feed.where((v) => v.uid == u.uid).toList();
     final likedVideos = state.feed.where((v) => v.likedByMe).toList();
+    final repostedVideos = <NovaVideo>[];
+    final savedVideos = <NovaVideo>[];
 
     return Scaffold(
       backgroundColor: bg,
@@ -162,7 +164,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                     ),
                   ),
                 );
-                }
               },
             ),
             IconButton(
@@ -540,6 +541,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               unselectedLabelColor: faint,
               tabs: const [
                 Tab(icon: Icon(Icons.grid_view, size: 22)),
+                Tab(icon: Icon(Icons.repeat, size: 22)),
+                Tab(icon: Icon(Icons.bookmark_border, size: 22)),
                 Tab(icon: Icon(Icons.favorite_border, size: 22)),
               ],
             ),
@@ -549,6 +552,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                 children: [
                   _videoGrid(myVideos, isDark, sub,
                       empty: 'No videos yet'),
+                  _videoGrid(repostedVideos, isDark, sub,
+                      empty: 'No reposts yet'),
+                  _videoGrid(savedVideos, isDark, sub,
+                      empty: 'No saved videos yet'),
                   _videoGrid(likedVideos, isDark, sub,
                       empty: 'No liked videos yet'),
                 ],
