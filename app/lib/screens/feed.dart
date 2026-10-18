@@ -48,13 +48,38 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
         context.read<AppState>().loadFeed(following: f);
       }
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<AppState>().registerRefreshHandler('home', refresh);
+    });
   }
 
   @override
   void dispose() {
     _tabs.dispose();
     _currentIndex.dispose();
+    try {
+      context.read<AppState>().unregisterRefreshHandler('home');
+    } catch (_) {}
     super.dispose();
+  }
+
+  /// Public refresh entry: pull-to-refresh + bottom-nav re-tap.
+  /// Reloads the currently active feed tab (FYP/Following/Local/Community).
+  Future<void> refresh() async {
+    final tabIndex = _tabs.index;
+    final state = context.read<AppState>();
+    if (tabIndex == 2) {
+      await state.loadFeed(following: true);
+    } else if (tabIndex == 3) {
+      await state.loadFeed(following: false);
+    } else {
+      // Community (0) / Local (1): reload general feed for now.
+      await state.loadFeed(following: false);
+    }
+    if (mounted) {
+      _currentIndex.value = 0;
+      setState(() {});
+    }
   }
 
   @override
@@ -108,14 +133,19 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
               child: Text('No videos yet — be the first to upload.', style: TextStyle(color: sub)),
             );
           }
-          return PageView.builder(
-            scrollDirection: Axis.vertical,
-            itemCount: state.feed.length,
-            onPageChanged: (i) {
-              _currentIndex.value = i;
-              state.recordView(state.feed[i]);
-            },
-            itemBuilder: (context, i) => VideoCard(video: state.feed[i], currentIndex: _currentIndex, index: i),
+          return RefreshIndicator(
+            color: Theme.of(context).colorScheme.primary,
+            onRefresh: refresh,
+            child: PageView.builder(
+              scrollDirection: Axis.vertical,
+              physics: const AlwaysScrollableScrollPhysics(),
+              itemCount: state.feed.length,
+              onPageChanged: (i) {
+                _currentIndex.value = i;
+                state.recordView(state.feed[i]);
+              },
+              itemBuilder: (context, i) => VideoCard(video: state.feed[i], currentIndex: _currentIndex, index: i),
+            ),
           );
         },
       ),
@@ -355,6 +385,10 @@ class _VideoCardState extends State<VideoCard> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(v.displayName.isNotEmpty ? v.displayName : '@${v.handle}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                      if (v.isVerified) ...[
+                        const SizedBox(width: 4),
+                        VerifiedBadge(size: 16, type: v.verificationType),
+                      ],
                       if (v.affiliatedWith != null) ...[
                         const SizedBox(width: 4),
                         AffiliateBadge(avatarUrl: v.affiliatedWith!.avatarUrl, size: 16),
