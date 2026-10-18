@@ -1662,6 +1662,73 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           return json({ following: method === 'POST' });
         }
       }
+      // ---------- followers / following / friends lists (authed) ----------
+      // TikTok-style 3-tab lists. Each row carries is_live, new_post_count,
+      // viewer_follows (the authed viewer follows this user) and
+      // follows_viewer (this user follows the authed viewer). Friends =
+      // mutual follows. Counts are always for the target profile.
+      {
+        const m = path.match(/^\/api\/users\/([^/]+)\/(followers|following|friends)$/);
+        if (m && method === 'GET') {
+          const viewerUid = await guard(request, env, 60);
+          const target = await env.DB.prepare(
+            'SELECT uid, handle FROM users WHERE uid = ? OR handle = ? OR username = ?'
+          ).bind(m[1], m[1], m[1]).first<{ uid: string; handle: string }>();
+          if (!target) throw httpError(404, 'user_not_found');
+          const kind = m[2];
+          const weekAgo = now() - 7 * 24 * 3600 * 1000;
+          const relJoin = kind === 'followers'
+            ? 'JOIN follows rel ON rel.follower_uid = u.uid'
+            : kind === 'following'
+              ? 'JOIN follows rel ON rel.followee_uid = u.uid'
+              : 'JOIN follows rel ON rel.followee_uid = u.uid JOIN follows rel2 ON rel2.follower_uid = u.uid AND rel2.followee_uid = rel.follower_uid';
+          const relWhere = kind === 'followers' ? 'rel.followee_uid = ?' : 'rel.follower_uid = ?';
+          // LIVE users surface first in the Following tab (TikTok behavior).
+          const liveFirst = kind === 'following' ? 'is_live DESC, ' : '';
+          const rows = await env.DB.prepare(
+            `SELECT u.uid, u.handle, u.display_name, u.avatar_url, u.is_verified, u.verification_type,
+              CASE WHEN ls.uid IS NOT NULL THEN 1 ELSE 0 END AS is_live,
+              COALESCE(vc.c, 0) AS new_post_count,
+              CASE WHEN vf.follower_uid IS NOT NULL THEN 1 ELSE 0 END AS viewer_follows,
+              CASE WHEN fv.follower_uid IS NOT NULL THEN 1 ELSE 0 END AS follows_viewer
+            FROM users u
+            ${relJoin}
+            LEFT JOIN live_sessions ls ON ls.uid = u.uid AND ls.status = 'live'
+            LEFT JOIN (SELECT uid, COUNT(*) AS c FROM videos WHERE created_at > ? GROUP BY uid) vc ON vc.uid = u.uid
+            LEFT JOIN follows vf ON vf.follower_uid = ? AND vf.followee_uid = u.uid
+            LEFT JOIN follows fv ON fv.follower_uid = u.uid AND fv.followee_uid = ?
+            WHERE ${relWhere}
+            ORDER BY ${liveFirst}rel.created_at DESC
+            LIMIT 200`
+          ).bind(weekAgo, viewerUid, viewerUid, target.uid).all<{
+            uid: string; handle: string; display_name: string; avatar_url: string;
+            is_verified: number; verification_type: string; is_live: number;
+            new_post_count: number; viewer_follows: number; follows_viewer: number;
+          }>();
+          const [flc, fgc, frc] = await Promise.all([
+            env.DB.prepare('SELECT COUNT(*) c FROM follows WHERE followee_uid = ?').bind(target.uid).first<{ c: number }>(),
+            env.DB.prepare('SELECT COUNT(*) c FROM follows WHERE follower_uid = ?').bind(target.uid).first<{ c: number }>(),
+            env.DB.prepare(`SELECT COUNT(*) c FROM follows a WHERE a.follower_uid = ?
+              AND EXISTS (SELECT 1 FROM follows b WHERE b.follower_uid = a.followee_uid AND b.followee_uid = a.follower_uid)`)
+              .bind(target.uid).first<{ c: number }>(),
+          ]);
+          return json({
+            users: (rows.results || []).map((r) => ({
+              uid: r.uid,
+              handle: r.handle,
+              display_name: r.display_name || '',
+              avatar_url: r.avatar_url || '',
+              is_verified: !!r.is_verified,
+              verification_type: r.verification_type || '',
+              is_live: r.is_live === 1,
+              new_post_count: r.new_post_count || 0,
+              viewer_follows: r.viewer_follows === 1,
+              follows_viewer: r.follows_viewer === 1,
+            })),
+            counts: { followers: flc?.c ?? 0, following: fgc?.c ?? 0, friends: frc?.c ?? 0 },
+          });
+        }
+      }
       // ---------- blocking ----------
       {
         const m = path.match(/^\/api\/blocks\/([^/]+)$/);
