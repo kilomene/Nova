@@ -182,6 +182,18 @@ async function ensureTotpColumns(db: D1Database): Promise<void> {
 // Inbox tables: stories (24h expiry), story_views, system_notifications.
 // Deploy-safe: CREATE TABLE IF NOT EXISTS, called lazily per request.
 let inboxTablesEnsured = false;
+
+// Voice-note duration on chat messages. Deploy-safe: ALTER TABLE in try/catch.
+let messageColsEnsured = false;
+async function ensureMessageColumns(db: D1Database): Promise<void> {
+  if (messageColsEnsured) return;
+  try {
+    await db.prepare('ALTER TABLE messages ADD COLUMN duration_s INTEGER NOT NULL DEFAULT 0').run();
+  } catch {
+    // Column already exists.
+  }
+  messageColsEnsured = true;
+}
 async function ensureInboxTables(db: D1Database): Promise<void> {
   if (inboxTablesEnsured) return;
   await db.batch([
@@ -1656,8 +1668,11 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           if (target.uid === uid) throw httpError(400, 'cannot_follow_self');
           if (method === 'POST') {
             await env.DB.prepare('INSERT OR IGNORE INTO follows (follower_uid, followee_uid, created_at) VALUES (?, ?, ?)').bind(uid, target.uid, now()).run();
+            // INSTANT: push to the followed user in real-time.
+            await publishToUser(env, target.uid, { type: 'follow', follower_uid: uid, following: true });
           } else {
             await env.DB.prepare('DELETE FROM follows WHERE follower_uid = ? AND followee_uid = ?').bind(uid, target.uid).run();
+            await publishToUser(env, target.uid, { type: 'follow', follower_uid: uid, following: false });
           }
           return json({ following: method === 'POST' });
         }
@@ -1727,6 +1742,104 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
             })),
             counts: { followers: flc?.c ?? 0, following: fgc?.c ?? 0, friends: frc?.c ?? 0 },
           });
+        }
+      }
+      // ---------- suggested accounts (authed) ----------
+      // TikTok-style "Suggested accounts": friends-of-friends (people followed
+      // by users the viewer follows), ranked by mutual count, then topped up
+      // with popular accounts. Excludes self, already-followed, the viewed
+      // profile, bots and blocked users.
+      {
+        const m = path.match(/^\/api\/users\/([^/]+)\/suggested$/);
+        if (m && method === 'GET') {
+          const viewerUid = await guard(request, env, 60);
+          const target = await env.DB.prepare(
+            'SELECT uid FROM users WHERE uid = ? OR handle = ? OR username = ?'
+          ).bind(m[1], m[1], m[1]).first<{ uid: string }>();
+          if (!target) throw httpError(404, 'user_not_found');
+          const limit = 20;
+          const rows = await env.DB.prepare(
+            `SELECT u.uid, u.handle, u.display_name, u.avatar_url, u.is_verified, u.verification_type,
+              COUNT(DISTINCT f.follower_uid) AS mutuals,
+              (SELECT GROUP_CONCAT(mu.avatar_url, '|') FROM (
+                 SELECT u2.avatar_url AS avatar_url FROM follows mf
+                 JOIN users u2 ON u2.uid = mf.follower_uid
+                 WHERE mf.followee_uid = u.uid
+                   AND mf.follower_uid IN (SELECT followee_uid FROM follows WHERE follower_uid = ?)
+                 LIMIT 3
+               ) mu) AS mutual_avatars,
+              (SELECT u3.display_name FROM follows mf2
+               JOIN users u3 ON u3.uid = mf2.follower_uid
+               WHERE mf2.followee_uid = u.uid
+                 AND mf2.follower_uid IN (SELECT followee_uid FROM follows WHERE follower_uid = ?)
+               LIMIT 1) AS mutual_name
+            FROM follows f
+            JOIN users u ON u.uid = f.followee_uid
+            WHERE f.follower_uid IN (SELECT followee_uid FROM follows WHERE follower_uid = ?)
+              AND f.followee_uid NOT IN (SELECT followee_uid FROM follows WHERE follower_uid = ?)
+              AND f.followee_uid != ?
+              AND f.followee_uid != ?
+              AND COALESCE(u.is_bot, 0) = 0
+              AND NOT EXISTS (SELECT 1 FROM blocks
+                WHERE (blocker_uid = ? AND blocked_uid = u.uid)
+                   OR (blocker_uid = u.uid AND blocked_uid = ?))
+            GROUP BY u.uid
+            ORDER BY mutuals DESC
+            LIMIT ?`
+          ).bind(viewerUid, viewerUid, viewerUid, viewerUid, viewerUid, target.uid, viewerUid, viewerUid, limit)
+            .all<{
+              uid: string; handle: string; display_name: string; avatar_url: string;
+              is_verified: number; verification_type: string; mutuals: number;
+              mutual_avatars: string | null; mutual_name: string | null;
+            }>();
+          let users = (rows.results || []).map((r) => ({
+            uid: r.uid,
+            handle: r.handle,
+            display_name: r.display_name || '',
+            avatar_url: r.avatar_url || '',
+            is_verified: !!r.is_verified,
+            verification_type: r.verification_type || '',
+            mutuals: r.mutuals || 0,
+            mutual_name: r.mutual_name || '',
+            mutual_avatars: (r.mutual_avatars || '').split('|').filter((s) => s.length > 0).slice(0, 3),
+          }));
+          // Top up with popular accounts when friends-of-friends are scarce.
+          if (users.length < limit) {
+            const seen = new Set(users.map((u) => u.uid));
+            const pop = await env.DB.prepare(
+              `SELECT u.uid, u.handle, u.display_name, u.avatar_url, u.is_verified, u.verification_type,
+                (SELECT COUNT(*) FROM follows WHERE followee_uid = u.uid) AS fc
+              FROM users u
+              WHERE u.uid != ?
+                AND u.uid != ?
+                AND COALESCE(u.is_bot, 0) = 0
+                AND u.uid NOT IN (SELECT followee_uid FROM follows WHERE follower_uid = ?)
+                AND NOT EXISTS (SELECT 1 FROM blocks
+                  WHERE (blocker_uid = ? AND blocked_uid = u.uid)
+                     OR (blocker_uid = u.uid AND blocked_uid = ?))
+              ORDER BY fc DESC
+              LIMIT ?`
+            ).bind(viewerUid, target.uid, viewerUid, viewerUid, viewerUid, limit - users.length)
+              .all<{
+                uid: string; handle: string; display_name: string; avatar_url: string;
+                is_verified: number; verification_type: string;
+              }>();
+            for (const r of (pop.results || [])) {
+              if (seen.has(r.uid)) continue;
+              users.push({
+                uid: r.uid,
+                handle: r.handle,
+                display_name: r.display_name || '',
+                avatar_url: r.avatar_url || '',
+                is_verified: !!r.is_verified,
+                verification_type: r.verification_type || '',
+                mutuals: 0,
+                mutual_name: '',
+                mutual_avatars: [] as string[],
+              });
+            }
+          }
+          return json({ users });
         }
       }
       // ---------- blocking ----------
@@ -2461,8 +2574,40 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
             await env.DB.prepare('DELETE FROM likes WHERE uid = ? AND video_id = ?').bind(uid, vid).run();
           }
           await env.DB.prepare('UPDATE videos SET like_count = (SELECT COUNT(*) FROM likes WHERE video_id = ?) WHERE id = ?').bind(vid, vid).run();
-          const v = await env.DB.prepare('SELECT like_count FROM videos WHERE id = ?').bind(vid).first<{ like_count: number }>();
+          const v = await env.DB.prepare('SELECT like_count, uid AS owner_uid FROM videos WHERE id = ?').bind(vid).first<{ like_count: number; owner_uid: string }>();
+          // INSTANT: push to the video owner in real-time.
+          if (v?.owner_uid && v.owner_uid !== uid) {
+            await publishToUser(env, v.owner_uid, { type: 'like', video_id: vid, liker_uid: uid, like_count: v.like_count, liked: method === 'POST' });
+          }
           return json({ likeCount: v?.like_count ?? 0 });
+        }
+      }
+      // ---------- save / unsave video (bookmark) ----------
+      {
+        const m = path.match(/^\/api\/videos\/([^/]+)\/save$/);
+        if (m && (method === 'POST' || method === 'DELETE')) {
+          const uid = await guard(request, env, 60);
+          const vid = vStr(m[1], 'videoId', 1, 64);
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS saved_videos (
+            uid TEXT NOT NULL, video_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+            PRIMARY KEY (uid, video_id))`).run();
+          if (method === 'POST') {
+            await env.DB.prepare('INSERT OR IGNORE INTO saved_videos (uid, video_id, created_at) VALUES (?, ?, ?)').bind(uid, vid, now()).run();
+          } else {
+            await env.DB.prepare('DELETE FROM saved_videos WHERE uid = ? AND video_id = ?').bind(uid, vid).run();
+          }
+          return json({ saved: method === 'POST' });
+        }
+        const sm = path.match(/^\/api\/users\/me\/saved$/);
+        if (sm && method === 'GET') {
+          const uid = await guard(request, env, 60);
+          const rows = await env.DB.prepare(
+            `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.verification_type
+             FROM saved_videos s JOIN videos v ON v.id = s.video_id
+             JOIN users u ON u.uid = v.uid
+             WHERE s.uid = ? ORDER BY s.created_at DESC LIMIT 50`
+          ).bind(uid).all();
+          return json({ videos: rows.results || [] });
         }
       }
       {
@@ -2690,17 +2835,32 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           // Mark thread as read.
           try {
             await ensureInboxTables(env.DB);
+            await ensureMessageColumns(env.DB);
             await env.DB.prepare('INSERT INTO thread_reads (thread_id, uid, last_read_at) VALUES (?, ?, ?) ON CONFLICT(thread_id, uid) DO UPDATE SET last_read_at = excluded.last_read_at')
               .bind(tid, uid, now()).run();
           } catch { /* read tracking is best-effort */ }
-          return json({ messages: (rows.results as unknown[]).reverse() });
+          // Sign media URLs so voice notes / attachments play directly.
+          const msgs: Record<string, unknown>[] = [];
+          for (const r of (rows.results as Record<string, unknown>[]).reverse()) {
+            let mediaUrl = '';
+            const mk = r['media_key'] as string | undefined;
+            if (mk) {
+              try {
+                mediaUrl = await signMediaKey(env.MEDIA_SIGNING_SECRET, mk);
+              } catch { /* leave empty */ }
+            }
+            msgs.push({ ...r, media_url: mediaUrl });
+          }
+          return json({ messages: msgs });
         }
         if (m && method === 'POST') {
           const uid = await guard(request, env, 120);
           const b = await readJson(request) as Record<string, unknown>;
           const text = vOptStr(b.text, 'text', 2000);
           const mediaKey = vOptStr(b.mediaKey, 'mediaKey', 300);
+          const durationS = vNum(b.durationS ?? 0, 'durationS', 0, 600);
           if (!text && !mediaKey) throw httpError(400, 'empty_message');
+          await ensureMessageColumns(env.DB);
           const peerId = vStr(m[1], 'peer', 1, 128);
           const peer = await env.DB.prepare('SELECT uid FROM users WHERE uid = ?').bind(peerId).first<{ uid: string }>();
           if (!peer) throw httpError(404, 'user_not_found');
@@ -2714,10 +2874,16 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           const t = now();
           await env.DB.batch([
             env.DB.prepare('INSERT OR IGNORE INTO threads (id, user_a, user_b, updated_at) VALUES (?, ?, ?, ?)').bind(tid, ...[uid, peer.uid].sort(), t),
-            env.DB.prepare('INSERT INTO messages (id, thread_id, sender_uid, text, media_key, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(id, tid, uid, text, mediaKey, t),
+            env.DB.prepare('INSERT INTO messages (id, thread_id, sender_uid, text, media_key, duration_s, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(id, tid, uid, text, mediaKey, durationS, t),
             env.DB.prepare('UPDATE threads SET last_message = ?, updated_at = ? WHERE id = ?').bind(text.slice(0, 120), t, tid),
           ]);
-          const event = { type: 'message', threadId: tid, message: { id, senderUid: uid, text, createdAt: t } };
+          let eventMediaUrl = '';
+          if (mediaKey) {
+            try {
+              eventMediaUrl = await signMediaKey(env.MEDIA_SIGNING_SECRET, mediaKey);
+            } catch { /* leave empty */ }
+          }
+          const event = { type: 'message', threadId: tid, message: { id, senderUid: uid, text, createdAt: t, mediaKey, mediaUrl: eventMediaUrl, durationS } };
           await publishToUser(env, peer.uid, event);
           await publishToUser(env, uid, event);
           return json({ id, threadId: tid }, 201);
