@@ -519,6 +519,36 @@ export default {
         }
       }
 
+      // ---------- root domain verification page (public, no auth) ----------
+      // AdSense requires verification at the top-level domain novamail.store.
+      // Serve a simple page with the AdSense script so the crawler finds it.
+      {
+        const host = (request.headers.get('host') || '').split(':')[0].toLowerCase();
+        if (host === 'novamail.store' && path === '/' && method === 'GET') {
+          const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nova</title>
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2431202994591245" crossorigin="anonymous"></script>
+<style>
+body{background:#0b0b0f;color:#fff;font-family:system-ui,-apple-system,sans-serif;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}
+h1{font-size:32px;margin:0 0 12px}
+a{color:#D4AF37;font-size:18px;text-decoration:none}
+</style>
+</head>
+<body>
+<div>
+<h1>Nova</h1>
+<p><a href="https://user.novamail.store/coins">Buy Nova Coins</a></p>
+</div>
+</body>
+</html>`;
+          return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+        }
+      }
+
       // ---------- web coin store (public, no auth) ----------
       // Buy Nova Coins outside the mobile app — same backend, same ledger.
       // Login via Firebase (email/password), pay via Flutterwave inline,
