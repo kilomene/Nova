@@ -4399,8 +4399,15 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           if (service === 'express') shipping = isIntl ? 80 : 25;
           else if (service === 'standard') shipping = isIntl ? 45 : 12;
           else shipping = isIntl ? 25 : 5;
-          // Tax: 8% (simplified)
-          const tax = Math.round(subtotal * 0.08 * 100) / 100;
+          // Tax: country-specific rates (goes to Nova's Flutterwave, not seller)
+          const countryTax: Record<string, number> = {
+            US: 0.08, NG: 0.075, GB: 0.20, DE: 0.19, FR: 0.20, CA: 0.13,
+            AU: 0.10, IN: 0.18, BR: 0.17, ZA: 0.15, KE: 0.16, GH: 0.15,
+            UG: 0.18, NL: 0.21, ES: 0.21, IT: 0.22, JP: 0.10, CN: 0.13,
+          };
+          const buyerCountry = (body.country as string || 'US').toUpperCase();
+          const taxRate = countryTax[buyerCountry] ?? 0.08;
+          const tax = Math.round(subtotal * taxRate * 100) / 100;
           const total = Math.round((subtotal + shipping + tax) * 100) / 100;
           // Nova commission: 5%
           const commission = Math.round(subtotal * 0.05 * 100) / 100;
@@ -4427,6 +4434,65 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           // Clear cart
           await env.DB.prepare('DELETE FROM cart_items WHERE uid = ?').bind(uid).run();
           return json({ order_id: orderId, subtotal, shipping, tax, total, commission, currency: 'USD' });
+        }
+      }
+
+
+      // ---------- seller ratings & verification ----------
+      {
+        const rm = path.match(/^\/api\/market\/reviews$/);
+        if (rm && method === 'POST') {
+          const uid = await guard(request, env, 30);
+          const body = await request.json() as Record<string, unknown>;
+          const sellerUid = vStr(body.seller_uid, 'seller_uid', 1, 64);
+          const rating = Math.max(1, Math.min(5, Number(body.rating) || 5));
+          const comment = vStr(body.comment || '', 'comment', 0, 1000);
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS seller_reviews (
+            id TEXT PRIMARY KEY, seller_uid TEXT NOT NULL, buyer_uid TEXT NOT NULL,
+            rating INTEGER NOT NULL, comment TEXT, created_at INTEGER NOT NULL)`).run();
+          await env.DB.prepare(
+            'INSERT INTO seller_reviews (id, seller_uid, buyer_uid, rating, comment, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+          ).bind('rev_' + crypto.randomUUID().slice(0, 12), sellerUid, uid, rating, comment, now()).run();
+          // Recalculate seller trust score
+          const stats = await env.DB.prepare(
+            `SELECT COUNT(*) as total, SUM(CASE WHEN rating >= 4 THEN 1 ELSE 0 END) as good,
+             SUM(CASE WHEN rating <= 2 THEN 1 ELSE 0 END) as bad, AVG(rating) as avg
+             FROM seller_reviews WHERE seller_uid = ?`
+          ).bind(sellerUid).first() as any;
+          const total = stats?.total || 0;
+          const goodPct = total ? Math.round((stats.good / total) * 100) : 100;
+          const badPct = total ? Math.round((stats.bad / total) * 100) : 0;
+          const avg = Math.round((stats?.avg || 5) * 10) / 10;
+          // Tier: Excellent (>=80% good), Good (60-79%), Poor (40-59%), Flagged (<40% or >=90% bad)
+          let tier = 'excellent';
+          if (badPct >= 90) tier = 'flagged';
+          else if (goodPct < 40) tier = 'poor';
+          else if (goodPct < 60) tier = 'poor';
+          else if (goodPct < 80) tier = 'good';
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS seller_ratings (
+            seller_uid TEXT PRIMARY KEY, total_reviews INTEGER NOT NULL DEFAULT 0,
+            good_pct INTEGER NOT NULL DEFAULT 100, bad_pct INTEGER NOT NULL DEFAULT 0,
+            avg_rating REAL NOT NULL DEFAULT 5.0, tier TEXT NOT NULL DEFAULT 'excellent',
+            flagged INTEGER NOT NULL DEFAULT 0, fine_usd REAL NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL)`).run();
+          const flagged = tier === 'flagged' ? 1 : 0;
+          const fine = tier === 'flagged' ? 50 : 0; // $50 fine to unflag
+          await env.DB.prepare(
+            `INSERT INTO seller_ratings (seller_uid, total_reviews, good_pct, bad_pct, avg_rating, tier, flagged, fine_usd, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(seller_uid) DO UPDATE SET total_reviews=?, good_pct=?, bad_pct=?, avg_rating=?, tier=?, flagged=?, fine_usd=?, updated_at=?`
+          ).bind(sellerUid, total, goodPct, badPct, avg, tier, flagged, fine, now(), total, goodPct, badPct, avg, tier, flagged, fine, now()).run();
+          // Instant push to seller if flagged
+          if (flagged) {
+            await publishToUser(env, sellerUid, { type: 'seller_flagged', tier, bad_pct: badPct, fine_usd: fine });
+          }
+          return json({ ok: true, tier, good_pct: goodPct, bad_pct: badPct, avg_rating: avg });
+        }
+        const gm = path.match(/^\/api\/market\/sellers\/([^/]+)\/rating$/);
+        if (gm && method === 'GET') {
+          const sellerUid = vStr(gm[1], 'seller_uid', 1, 64);
+          const r = await env.DB.prepare('SELECT * FROM seller_ratings WHERE seller_uid = ?').bind(sellerUid).first();
+          return json({ rating: r || { tier: 'excellent', good_pct: 100, bad_pct: 0, avg_rating: 5.0, total_reviews: 0 } });
         }
       }
 
