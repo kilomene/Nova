@@ -8,6 +8,7 @@ import '../utils/format.dart';
 import '../widgets/ai_badge.dart';
 import '../widgets/gifts.dart';
 import 'affiliates.dart';
+import 'feed.dart';
 import 'follow_list.dart';
 import 'inbox.dart';
 import 'edit_profile.dart';
@@ -568,7 +569,15 @@ class _ProfileScreenState extends State<ProfileScreen>
       itemCount: videos.length,
       itemBuilder: (context, i) {
         final v = videos[i];
-        return Container(
+        return GestureDetector(
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => _ProfileVideoViewer(videos: videos, initialIndex: i),
+              ),
+            );
+          },
+          child: Container(
           color: isDark ? const Color(0xFF161616) : Colors.black12,
           child: Stack(
             fit: StackFit.expand,
@@ -603,6 +612,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ],
           ),
+        ),
         );
       },
     );
@@ -740,6 +750,66 @@ class _ActionChip extends StatelessWidget {
                     fontSize: 13)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+
+/// Full-screen vertical video viewer for profile grid taps.
+/// Shows the user's videos in a TikTok-style PageView starting at the tapped index.
+class _ProfileVideoViewer extends StatefulWidget {
+  final List<NovaVideo> videos;
+  final int initialIndex;
+  const _ProfileVideoViewer({required this.videos, required this.initialIndex});
+
+  @override
+  State<_ProfileVideoViewer> createState() => _ProfileVideoViewerState();
+}
+
+class _ProfileVideoViewerState extends State<_ProfileVideoViewer> {
+  late PageController _pc;
+  late ValueNotifier<int> _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _pc = PageController(initialPage: widget.initialIndex);
+    _currentIndex = ValueNotifier<int>(widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pc.dispose();
+    _currentIndex.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          PageView.builder(
+            controller: _pc,
+            scrollDirection: Axis.vertical,
+            itemCount: widget.videos.length,
+            onPageChanged: (i) => _currentIndex.value = i,
+            itemBuilder: (context, i) {
+              final v = widget.videos[i];
+              return VideoCard(video: v, currentIndex: _currentIndex, index: i);
+            },
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 8,
+            left: 8,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
+        ],
       ),
     );
   }
