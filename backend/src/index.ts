@@ -4503,6 +4503,51 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         }
       }
 
+
+      // ---------- comment likes & replies ----------
+      {
+        const lm = path.match(/^\/api\/videos\/([^/]+)\/comments\/([^/]+)\/like$/);
+        if (lm && (method === 'POST' || method === 'DELETE')) {
+          const uid = await guard(request, env, 60);
+          const cid = vStr(lm[2], 'commentId', 1, 64);
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS comment_likes (
+            uid TEXT NOT NULL, comment_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+            PRIMARY KEY (uid, comment_id))`).run();
+          if (method === 'POST') {
+            await env.DB.prepare('INSERT OR IGNORE INTO comment_likes (uid, comment_id, created_at) VALUES (?, ?, ?)').bind(uid, cid, now()).run();
+          } else {
+            await env.DB.prepare('DELETE FROM comment_likes WHERE uid = ? AND comment_id = ?').bind(uid, cid).run();
+          }
+          const cnt = await env.DB.prepare('SELECT COUNT(*) as c FROM comment_likes WHERE comment_id = ?').bind(cid).first() as any;
+          return json({ likeCount: cnt?.c ?? 0 });
+        }
+        const rm = path.match(/^\/api\/videos\/([^/]+)\/comments\/([^/]+)\/replies$/);
+        if (rm && method === 'GET') {
+          const uid = await guard(request, env, 60);
+          const cid = vStr(rm[2], 'commentId', 1, 64);
+          const rows = await env.DB.prepare(
+            `SELECT c.*, u.handle, u.display_name, u.avatar_url, u.verification_type,
+             (SELECT COUNT(*) FROM comment_likes WHERE comment_id = c.id) as like_count,
+             (SELECT 1 FROM comment_likes WHERE comment_id = c.id AND uid = ?) as liked_by_me
+             FROM comments c JOIN users u ON u.uid = c.uid
+             WHERE c.parent_id = ? ORDER BY c.created_at ASC LIMIT 50`
+          ).bind(uid, cid).all();
+          return json({ replies: rows.results || [] });
+        }
+        if (rm && method === 'POST') {
+          const uid = await guard(request, env, 30);
+          const vid = vStr(rm[1], 'videoId', 1, 64);
+          const cid = vStr(rm[2], 'commentId', 1, 64);
+          const body = await request.json() as Record<string, unknown>;
+          const text = vStr(body.text, 'text', 1, 500);
+          const rid = 'c_' + crypto.randomUUID().slice(0, 12);
+          await env.DB.prepare(
+            'INSERT INTO comments (id, video_id, uid, text, parent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+          ).bind(rid, vid, uid, text, cid, now()).run();
+          return json({ id: rid });
+        }
+      }
+
       return json({ error: 'not_found' }, 404);
     } catch (e) {
       const err = e as { status?: number; message?: string };
