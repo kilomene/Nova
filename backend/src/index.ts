@@ -4548,6 +4548,31 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         }
       }
 
+
+      // ---------- repost & not interested ----------
+      {
+        const rm = path.match(/^\/api\/videos\/([^/]+)\/repost$/);
+        if (rm && method === 'POST') {
+          const uid = await guard(request, env, 60);
+          const vid = vStr(rm[1], 'videoId', 1, 64);
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS reposts (
+            uid TEXT NOT NULL, video_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+            PRIMARY KEY (uid, video_id))`).run();
+          await env.DB.prepare('INSERT OR IGNORE INTO reposts (uid, video_id, created_at) VALUES (?, ?, ?)').bind(uid, vid, now()).run();
+          return json({ ok: true });
+        }
+        const nm = path.match(/^\/api\/videos\/([^/]+)\/not-interested$/);
+        if (nm && method === 'POST') {
+          const uid = await guard(request, env, 60);
+          const vid = vStr(nm[1], 'videoId', 1, 64);
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS not_interested (
+            uid TEXT NOT NULL, video_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+            PRIMARY KEY (uid, video_id))`).run();
+          await env.DB.prepare('INSERT OR IGNORE INTO not_interested (uid, video_id, created_at) VALUES (?, ?, ?)').bind(uid, vid, now()).run();
+          return json({ ok: true });
+        }
+      }
+
       return json({ error: 'not_found' }, 404);
     } catch (e) {
       const err = e as { status?: number; message?: string };
