@@ -335,7 +335,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                         ? u.uid
                                         : u.handle,
                                     handle: u.handle,
-                                    followers: false)))),
+                                    initialTab:
+                                        FollowListTab.following)))),
                     _Stat(
                         n: formatCount(_followers),
                         label: 'Followers',
@@ -348,7 +349,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                         ? u.uid
                                         : u.handle,
                                     handle: u.handle,
-                                    followers: true)))),
+                                    initialTab:
+                                        FollowListTab.followers)))),
                     _Stat(
                         n: formatCount(_likes), label: 'Likes', fg: fg, sub: sub),
                   ],
