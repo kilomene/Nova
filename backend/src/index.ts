@@ -2609,6 +2609,17 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           ).bind(uid).all();
           return json({ videos: rows.results || [] });
         }
+        const rpm = path.match(/^\/api\/users\/me\/reposts$/);
+        if (rpm && method === 'GET') {
+          const uid = await guard(request, env, 60);
+          const rows = await env.DB.prepare(
+            `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.verification_type
+             FROM reposts r JOIN videos v ON v.id = r.video_id
+             JOIN users u ON u.uid = v.uid
+             WHERE r.uid = ? ORDER BY r.created_at DESC LIMIT 50`
+          ).bind(uid).all();
+          return json({ videos: rows.results || [] });
+        }
       }
       {
         const m = path.match(/^\/api\/videos\/([^/]+)\/comments$/);
@@ -4608,6 +4619,36 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
             ).bind(uid, t.uid, now(), now()).run();
           }
           return json({ ok: true });
+        }
+      }
+
+
+      // ---------- user reposts & saved videos ----------
+      {
+        const rm = path.match(/^\/api\/users\/me\/reposts$/);
+        if (rm && method === 'GET') {
+          const uid = await guard(request, env, 60);
+          const rows = await env.DB.prepare(
+            `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.is_verified, u.verification_type
+             FROM reposts r JOIN videos v ON v.id = r.video_id
+             JOIN users u ON u.uid = v.uid
+             WHERE r.uid = ? ORDER BY r.created_at DESC LIMIT 50`
+          ).bind(uid).all();
+          return json({ videos: rows.results || [] });
+        }
+        const sm = path.match(/^\/api\/users\/me\/saved$/);
+        if (sm && method === 'GET') {
+          const uid = await guard(request, env, 60);
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS saved_videos (
+            uid TEXT NOT NULL, video_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+            PRIMARY KEY (uid, video_id))`).run();
+          const rows = await env.DB.prepare(
+            `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.is_verified, u.verification_type
+             FROM saved_videos s JOIN videos v ON v.id = s.video_id
+             JOIN users u ON u.uid = v.uid
+             WHERE s.uid = ? ORDER BY s.created_at DESC LIMIT 50`
+          ).bind(uid).all();
+          return json({ videos: rows.results || [] });
         }
       }
 
