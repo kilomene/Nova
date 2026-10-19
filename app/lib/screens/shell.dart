@@ -55,13 +55,14 @@ class _MainShellState extends State<MainShell> {
       const InboxScreen(),
       const ProfileScreen(self: true),
     ];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: isDark ? Colors.black : Colors.white,
       body: IndexedStack(index: _index, children: pages),
       bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: Colors.black,
+        backgroundColor: isDark ? Colors.black : Colors.white,
         selectedItemColor: Theme.of(context).colorScheme.primary,
-        unselectedItemColor: Colors.white54,
+        unselectedItemColor: isDark ? Colors.white54 : Colors.black54,
         type: BottomNavigationBarType.fixed,
         currentIndex: _index,
         onTap: _onTap,
