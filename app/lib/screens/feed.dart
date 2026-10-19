@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 
 import '../models.dart';
 import '../state/app_state.dart';
+import '../widgets/default_avatar.dart';
 import '../utils/format.dart';
 import '../widgets/ai_badge.dart';
 import '../widgets/gifts.dart';
@@ -318,11 +319,9 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => ProfileScreen(uid: v.uid, handle: v.handle)),
                       ),
-                      child: CircleAvatar(
+                      child: UserAvatar(
+                        avatarUrl: v.avatarUrl,
                         radius: 24,
-                        backgroundColor: Colors.white24,
-                        backgroundImage: v.avatarUrl.isNotEmpty ? NetworkImage(v.avatarUrl) : null,
-                        child: v.avatarUrl.isEmpty ? Text(v.handle.isNotEmpty ? v.handle[0].toUpperCase() : '?') : null,
                       ),
                     ),
                     // Follow "+" button (TikTok-style) — disappears after following.
