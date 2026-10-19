@@ -1508,8 +1508,6 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (_) {}
   }
 
-  Future<void> _takePhoto(BuildContext context) async {
-    final picker = ImagePicker();
   /// Show attachment options: Camera or Gallery (photos + videos).
   void _showAttachmentOptions(BuildContext context) {
     showModalBottomSheet(
@@ -1658,6 +1656,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+
+  Future<void> _takePhoto(BuildContext context) async {
+    final picker = ImagePicker();
     final file = await picker.pickImage(source: ImageSource.camera);
     if (file == null) return;
     final state = context.read<AppState>();
