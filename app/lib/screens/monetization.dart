@@ -81,11 +81,11 @@ class _CoinsScreenState extends State<CoinsScreen> {
     );
     if (ok != true || !mounted) return;
     try {
-      final opened = await state.coins.buyPackage(state.api, pkg, email.text.trim());
+      final url = await state.coins.buyPackage(state.api, pkg, email.text.trim());
       if (!mounted) return;
       if (state.isDemo) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Demo credit: +${pkg.coins} coins')));
-      } else if (opened) {
+      } else if (url != null) {
         // Full flow: backend returned a checkout URL and it was opened in
         // the browser. On return, refresh the balance (manual + automatic
         // poll for the async webhook credit).
@@ -267,8 +267,7 @@ class _CustomAmountWidgetState extends State<_CustomAmountWidget> {
                   return;
                 }
                 // Show email dialog then open in-app browser
-                final emailCtrl = TextEditingController(
-                    text: context.read<AppState>().me?.email ?? '');
+                final emailCtrl = TextEditingController();
                 final ok = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
