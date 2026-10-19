@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models.dart';
 import '../services/api_client.dart';
 import '../state/app_state.dart';
+import '../services/voice_recorder.dart';
 import 'shipments.dart';
 import 'follow_list.dart';
 import 'profile.dart';
@@ -942,6 +943,141 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// Profile-settings sheet: follow/unfollow + block for the chat peer.
+  void _openChatSettings(BuildContext context, AppState state, Color fg, bool isDark) {
+    final peerUid = widget.peerUid;
+    final name =
+        widget.peerName.isNotEmpty ? widget.peerName : '@${widget.peerHandle}';
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (c) {
+        final following = state.followingUids.contains(peerUid);
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: fg.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: Icon(
+                    following
+                        ? Icons.person_remove_outlined
+                        : Icons.person_add_outlined,
+                    color: fg),
+                title: Text(following ? 'Unfollow $name' : 'Follow $name',
+                    style:
+                        TextStyle(color: fg, fontWeight: FontWeight.w600)),
+                onTap: () async {
+                  Navigator.of(c).pop();
+                  await state.toggleFollow(peerUid);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.block_outlined,
+                    color: Colors.redAccent),
+                title: Text('Block $name',
+                    style: const TextStyle(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.w600)),
+                onTap: () async {
+                  Navigator.of(c).pop();
+                  await state.blockUser(peerUid);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Blocked $name')));
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Suggested-accounts carousel: friends-of-friends, slideable, ~20 max.
+  void _openSuggested(
+      BuildContext context, AppState state, Color fg, Color sub, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? Colors.black : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (c) => SafeArea(
+        child: SizedBox(
+          height: 320,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 8),
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: fg.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Text('Suggested accounts',
+                    style: TextStyle(
+                        color: fg,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800)),
+              ),
+              Expanded(
+                child: FutureBuilder<List<SuggestedUser>>(
+                  future: state.fetchSuggested(widget.peerUid),
+                  builder: (c2, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final users = snap.data ?? [];
+                    if (users.isEmpty) {
+                      return Center(
+                          child: Text('No suggestions yet',
+                              style: TextStyle(color: sub)));
+                    }
+                    return ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      itemCount: users.length,
+                      separatorBuilder: (_, __) =>
+                          const SizedBox(width: 12),
+                      itemBuilder: (c3, i) => _SuggestedCard(
+                        user: users[i],
+                        fg: fg,
+                        sub: sub,
+                        isDark: isDark,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.read<AppState>();
@@ -1002,6 +1138,16 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Chat settings',
+            icon: Icon(Icons.settings_outlined, color: fg),
+            onPressed: () => _openChatSettings(context, state, fg, isDark),
+          ),
+          IconButton(
+            tooltip: 'Suggested accounts',
+            icon: Icon(Icons.keyboard_arrow_down, color: fg),
+            onPressed: () => _openSuggested(context, state, fg, sub, isDark),
+          ),
           PopupMenuButton<String>(
             icon: Icon(Icons.more_horiz, color: fg),
             color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
@@ -1433,19 +1579,55 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// WhatsApp-style: long-press mic to start recording.
-  void _startVoiceRecording(BuildContext context) {
-    setState(() => _recording = true);
-    // TODO: Start actual audio recording via `record` package.
+  Future<void> _startVoiceRecording(BuildContext context) async {
+    try {
+      await VoiceRecorder.start();
+      if (mounted) setState(() => _recording = true);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Recording failed: $e')));
+      }
+    }
   }
 
   /// WhatsApp-style: release to send automatically.
-  void _stopVoiceRecording(BuildContext context) {
+  Future<void> _stopVoiceRecording(BuildContext context) async {
     if (!_recording) return;
-    setState(() => _recording = false);
-    // TODO: Stop recording and send the voice message.
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Voice message — coming in next build')));
+    try {
+      final path = await VoiceRecorder.stop();
+      if (mounted) setState(() => _recording = false);
+      if (path != null && path.isNotEmpty && context.mounted) {
+        await _sendVoiceMessage(context, path);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _recording = false);
+    }
+  }
+
+  /// Upload and send the voice message.
+  Future<void> _sendVoiceMessage(BuildContext context, String filePath) async {
+    final state = context.read<AppState>();
+    try {
+      // Upload the audio file, get the media key
+      final up = await state.api.upload('/api/uploads', filePath);
+      final mediaKey = up['key'] as String? ?? up['media_key'] as String? ?? '';
+      if (mediaKey.isEmpty) throw Exception('Upload failed');
+      // Send as message with media key (backend signs the URL)
+      await state.api.post('/api/threads/${widget.peerUid}/messages', {
+        'text': '🎤 Voice message',
+        'mediaKey': mediaKey,
+        'durationS': 0,
+      });
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Voice message sent')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to send: $e')));
+      }
     }
   }
 
@@ -1865,6 +2047,87 @@ class _VoiceCallScreenState extends State<VoiceCallScreen> {
         const SizedBox(height: 8),
         Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
       ],
+    );
+  }
+}
+
+/// One card in the suggested-accounts carousel: avatar, name, reason label,
+/// and a Follow/Following toggle.
+class _SuggestedCard extends StatefulWidget {
+  final SuggestedUser user;
+  final Color fg;
+  final Color sub;
+  final bool isDark;
+  const _SuggestedCard(
+      {required this.user,
+      required this.fg,
+      required this.sub,
+      required this.isDark});
+
+  @override
+  State<_SuggestedCard> createState() => _SuggestedCardState();
+}
+
+class _SuggestedCardState extends State<_SuggestedCard> {
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final u = widget.user;
+    final fg = widget.fg;
+    final sub = widget.sub;
+    final isDark = widget.isDark;
+    final following = state.followingUids.contains(u.uid);
+    final name = u.displayName.isNotEmpty ? u.displayName : '@${u.handle}';
+    return Container(
+      width: 168,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF6F6F6),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircleAvatar(
+            radius: 30,
+            backgroundColor: isDark ? Colors.white24 : Colors.black12,
+            backgroundImage:
+                u.avatarUrl.isNotEmpty ? NetworkImage(u.avatarUrl) : null,
+            child: u.avatarUrl.isEmpty
+                ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                    style: TextStyle(fontSize: 22, color: fg))
+                : null,
+          ),
+          const SizedBox(height: 8),
+          Text(name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: fg, fontWeight: FontWeight.w700, fontSize: 13)),
+          Text('@${u.handle}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: sub, fontSize: 12)),
+          if (u.reasonLabel.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(u.reasonLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: sub, fontSize: 11)),
+          ],
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () async {
+                await state.toggleFollow(u.uid);
+                if (mounted) setState(() {});
+              },
+              child: Text(following ? 'Following' : 'Follow'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
