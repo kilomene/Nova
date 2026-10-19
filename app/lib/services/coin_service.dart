@@ -43,14 +43,15 @@ class CoinService extends ChangeNotifier {
   /// several other shapes (link / checkoutUrl / checkout_url at the top
   /// level, or directly under flutterwave) are accepted too, so a backend
   /// response-format change doesn't surface as "checkout unavailable".
-  Future<bool> buyPackage(ApiClient api, CoinPackage pkg, String email) async {
+  /// Returns the checkout URL for in-app browser. Null in demo mode.
+  Future<String?> buyPackage(ApiClient api, CoinPackage pkg, String email) async {
     if (api.isDemo) {
       // Labeled demo simulation: no real payment.
       final prefs = await SharedPreferences.getInstance();
       balance += pkg.coins;
       await prefs.setInt(_prefsBalance, balance);
       notifyListeners();
-      return true;
+      return null;
     }
     final cleanEmail = email.trim();
     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(cleanEmail)) {
@@ -59,12 +60,30 @@ class CoinService extends ChangeNotifier {
     final r = await api.post('/api/coins/buy', {'packageId': pkg.id, 'email': cleanEmail});
     final link = _extractCheckoutLink(r);
     if (link == null) throw ApiException(502, 'checkout_unavailable');
-    final uri = Uri.parse(link);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-      return true;
+    return link;
+  }
+
+  /// Custom amount purchase — returns checkout URL.
+  Future<String?> buyCustom(ApiClient api, {required int coins, required double usd, required String email}) async {
+    if (api.isDemo) {
+      final prefs = await SharedPreferences.getInstance();
+      balance += coins;
+      await prefs.setInt(_prefsBalance, balance);
+      notifyListeners();
+      return null;
     }
-    throw ApiException(502, 'checkout_unavailable');
+    final cleanEmail = email.trim();
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(cleanEmail)) {
+      throw ApiException(400, 'invalid_email');
+    }
+    final r = await api.post('/api/coins/buy-custom', {
+      'coins': coins,
+      'usd': usd,
+      'email': cleanEmail,
+    });
+    final link = _extractCheckoutLink(r);
+    if (link == null) throw ApiException(502, 'checkout_unavailable');
+    return link;
   }
 
   /// Hunt for a checkout URL across the known backend response shapes.
