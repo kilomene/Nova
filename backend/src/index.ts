@@ -1941,10 +1941,9 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       if (path === '/api/config/tokens' && method === 'GET') {
         await guard(request, env);
         return json({
-          // Sepolia testnet token addresses — replace with actual USDT/USDC test tokens.
-          // These are placeholders; the admin can update them via the backend.
-          usdt: '0x0000000000000000000000000000000000000000',
-          usdc: '0x0000000000000000000000000000000000000000',
+          // Sepolia testnet token addresses — deployed 2026-10-19 (Test USDT / Test USDC).
+          usdt: '0xd33a8e8ffc029923e4237c81925cd46e84deed31',
+          usdc: '0x797537da460ea0499e02da1140dbbbe7df7d7e02',
           chainId: 11155111,
           chainName: 'sepolia',
         });
