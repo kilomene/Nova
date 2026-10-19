@@ -12,6 +12,7 @@ import 'feed.dart';
 import 'follow_list.dart';
 import 'qr_code.dart';
 import 'profile_views.dart';
+import '../widgets/suggested_accounts.dart';
 import 'inbox.dart';
 import 'edit_profile.dart';
 import 'monetization.dart';
@@ -38,6 +39,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   int _likes = 0;
   bool _loading = true;
   bool _isFollowing = false;
+  List<NovaVideo> _savedVideos = [];
+  List<NovaVideo> _repostedVideos = [];
   late TabController _tabs;
 
   @override
@@ -71,6 +74,13 @@ class _ProfileScreenState extends State<ProfileScreen>
       if (widget.self) {
         _user = state.me;
         _followers = state.myFollowerCount;
+        // Reposts + Saved tabs pull the viewer's own lists from the backend.
+        try {
+          _repostedVideos = await state.fetchRepostedVideos();
+        } catch (_) {}
+        try {
+          _savedVideos = await state.fetchSavedVideos();
+        } catch (_) {}
       } else {
         _user = await state.fetchUser(widget.uid ?? widget.handle ?? '');
         _isFollowing = state.followingUids.contains(_user?.uid);
@@ -117,8 +127,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
     final myVideos = state.feed.where((v) => v.uid == u.uid).toList();
     final likedVideos = state.feed.where((v) => v.likedByMe).toList();
-    final repostedVideos = <NovaVideo>[];
-    final savedVideos = <NovaVideo>[];
+    final repostedVideos = _repostedVideos;
+    final savedVideos = _savedVideos;
 
     return Scaffold(
       backgroundColor: bg,
@@ -471,6 +481,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis),
                   ),
+                // Suggested accounts (TikTok-style).
+                if (!widget.self)
+                  SuggestedAccounts(userId: u.uid),
                 // X-style affiliates: only gold-badge companies have affiliates.
                 if (u.verificationType == 'company')
                   Padding(
