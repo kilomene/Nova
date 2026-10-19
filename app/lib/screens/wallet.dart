@@ -26,6 +26,8 @@ class WalletScreen extends StatefulWidget {
 class _WalletScreenState extends State<WalletScreen> {
   String? _evmBal;
   String? _btcBal;
+  String? _usdtBal;
+  String? _usdcBal;
   bool _loadingBal = false;
 
   @override
@@ -48,6 +50,35 @@ class _WalletScreenState extends State<WalletScreen> {
     } catch (_) {
       _btcBal = '—';
     }
+    // USDT/USDC token balances (contract addresses from backend config).
+    try {
+      final api = context.read<AppState>().api;
+      final cfg = await api.get('/api/config/tokens');
+      const zeroAddr = '0x0000000000000000000000000000000000000000';
+      final usdtAddr = cfg['usdt'] as String?;
+      final usdcAddr = cfg['usdc'] as String?;
+      if (usdtAddr != null && usdtAddr != zeroAddr) {
+        try {
+          _usdtBal = await w.tokenBalance(usdtAddr);
+        } catch (_) {
+          _usdtBal = '—';
+        }
+      } else {
+        _usdtBal = '0';
+      }
+      if (usdcAddr != null && usdcAddr != zeroAddr) {
+        try {
+          _usdcBal = await w.tokenBalance(usdcAddr);
+        } catch (_) {
+          _usdcBal = '—';
+        }
+      } else {
+        _usdcBal = '0';
+      }
+    } catch (_) {
+      _usdtBal = '—';
+      _usdcBal = '—';
+    }
     if (mounted) setState(() => _loadingBal = false);
   }
 
@@ -56,9 +87,12 @@ class _WalletScreenState extends State<WalletScreen> {
     try {
       final ethBal = double.tryParse(_evmBal ?? '0') ?? 0;
       final btcBal = double.tryParse(_btcBal ?? '0') ?? 0;
+      final usdtBal = double.tryParse(_usdtBal ?? '0') ?? 0;
+      final usdcBal = double.tryParse(_usdcBal ?? '0') ?? 0;
       // Real-time crypto prices
       final prices = await CryptoPrices.getPrices();
-      final totalUsd = (ethBal * prices['ETH']!) + (btcBal * prices['BTC']!);
+      // USDT/USDC are 1:1 with USD.
+      final totalUsd = (ethBal * prices['ETH']!) + (btcBal * prices['BTC']!) + usdtBal + usdcBal;
       // Convert to user's selected display currency with real-time forex
       final code = await DisplayCurrency.load();
       final converted = await DisplayCurrency.convertFromUsd(totalUsd, code);
@@ -69,18 +103,27 @@ class _WalletScreenState extends State<WalletScreen> {
     }
   }
 
-  /// Calculate BTC equivalent with 7 decimal places (real-time rates).
-  Future<String> _btcEquivalent() async {
-    try {
-      final ethBal = double.tryParse(_evmBal ?? '0') ?? 0;
-      final btcBal = double.tryParse(_btcBal ?? '0') ?? 0;
-      final prices = await CryptoPrices.getPrices();
-      // Convert ETH to BTC using real-time prices
-      final ethBtc = prices['ETH']! / prices['BTC']!;
-      final totalBtc = btcBal + (ethBal * ethBtc);
-      return totalBtc.toStringAsFixed(7);
-    } catch (_) {
-      return '0.0000000';
+  /// Native balance text for a coin row, from already-loaded balances.
+  String? _balanceFor(String symbol) {
+    switch (symbol) {
+      case 'BTC':
+        if (_btcBal == null) return null;
+        final v = double.tryParse(_btcBal!);
+        return v == null ? '—' : '${v.toStringAsFixed(7)} BTC';
+      case 'ETH':
+        if (_evmBal == null) return null;
+        final v = double.tryParse(_evmBal!);
+        return v == null ? '—' : '${v.toStringAsFixed(4)} ETH';
+      case 'USDT':
+        if (_usdtBal == null) return null;
+        final v = double.tryParse(_usdtBal!);
+        return v == null ? '—' : '${v.toStringAsFixed(2)} USDT';
+      case 'USDC':
+        if (_usdcBal == null) return null;
+        final v = double.tryParse(_usdcBal!);
+        return v == null ? '—' : '${v.toStringAsFixed(2)} USDC';
+      default:
+        return null;
     }
   }
 
@@ -167,12 +210,6 @@ class _WalletScreenState extends State<WalletScreen> {
                                           fontSize: 30,
                                           fontWeight: FontWeight.w800)),
                                 ),
-                          FutureBuilder<String>(
-                            future: _btcEquivalent(),
-                            builder: (context, snap) => Text('${snap.data ?? '0.0000000'} BTC',
-                                style: TextStyle(
-                                    color: Colors.white70, fontSize: 15)),
-                          ),
                         ],
                       ),
                     ),
@@ -223,6 +260,7 @@ class _WalletScreenState extends State<WalletScreen> {
                     for (final coin in walletCoins)
                       _CoinRow(
                         coin: coin,
+                        balanceText: _balanceFor(coin.symbol),
                         onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
                                 builder: (_) =>
@@ -356,7 +394,8 @@ class _WalletAction extends StatelessWidget {
 class _CoinRow extends StatelessWidget {
   final WalletCoin coin;
   final VoidCallback onTap;
-  const _CoinRow({required this.coin, required this.onTap});
+  final String? balanceText;
+  const _CoinRow({required this.coin, required this.onTap, this.balanceText});
 
   @override
   Widget build(BuildContext context) {
@@ -405,10 +444,94 @@ class _CoinRow extends StatelessWidget {
                 ],
               ),
             ),
+            _CoinBalanceText(symbol: coin.symbol, overrideText: balanceText),
+            const SizedBox(width: 4),
             const Icon(Icons.chevron_right, color: Colors.white38),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Native coin balance shown beside each coin row (e.g. "0.0500 ETH").
+/// BTC uses 7 decimals, ETH 4, USDT/USDC 2.
+class _CoinBalanceText extends StatefulWidget {
+  final String symbol;
+  final String? overrideText;
+  const _CoinBalanceText({required this.symbol, this.overrideText});
+
+  @override
+  State<_CoinBalanceText> createState() => _CoinBalanceTextState();
+}
+
+class _CoinBalanceTextState extends State<_CoinBalanceText> {
+  String? _text;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.overrideText != null) {
+      _text = widget.overrideText;
+    } else {
+      _fetch();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_CoinBalanceText old) {
+    super.didUpdateWidget(old);
+    if (widget.overrideText != old.overrideText) {
+      if (widget.overrideText != null) {
+        setState(() => _text = widget.overrideText);
+      } else {
+        _fetch();
+      }
+    }
+  }
+
+  String _fmt(String raw, int decimals) {
+    final v = double.tryParse(raw);
+    if (v == null) return '—';
+    return v.toStringAsFixed(decimals);
+  }
+
+  Future<void> _fetch() async {
+    try {
+      final st = context.read<AppState>();
+      final w = st.wallet;
+      if (!w.hasWallet) return;
+      String? out;
+      switch (widget.symbol) {
+        case 'BTC':
+          out = '${_fmt(await w.btcBalance(), 7)} BTC';
+          break;
+        case 'ETH':
+          out = '${_fmt(await w.evmBalance(), 4)} ETH';
+          break;
+        case 'USDT':
+        case 'USDC':
+          final cfg = await st.api.get('/api/config/tokens');
+          const zeroAddr = '0x0000000000000000000000000000000000000000';
+          final addr = (widget.symbol == 'USDT' ? cfg['usdt'] : cfg['usdc']) as String?;
+          if (addr == null || addr == zeroAddr) {
+            out = '0.00 ${widget.symbol}';
+          } else {
+            out = '${_fmt(await w.tokenBalance(addr), 2)} ${widget.symbol}';
+          }
+          break;
+      }
+      if (mounted && out != null) setState(() => _text = out);
+    } catch (_) {
+      if (mounted) setState(() => _text = '—');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      _text ?? '…',
+      style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
     );
   }
 }
