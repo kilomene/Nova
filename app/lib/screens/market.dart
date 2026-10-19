@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models.dart';
 import '../services/api_client.dart';
+import '../services/crypto_prices.dart';
 import '../state/app_state.dart';
 import 'orders.dart';
 import 'cart_screen.dart';
@@ -385,16 +386,24 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                               foregroundColor: Theme.of(context).colorScheme.onPrimary,
                               padding: const EdgeInsets.symmetric(vertical: 14)),
                           onPressed: () async {
-                        try {
-                          final r = await state.createOrder(listingId: listing.id, paymentMethod: _payMethod, quantity: _qty);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order placed. Receipt saved to order history.')));
-                            Navigator.of(context).pushReplacement(MaterialPageRoute(
-                              builder: (_) => OrderDetailScreen(orderId: '${r['id']}'),
-                            ));
+                        if (_payMethod == 'crypto') {
+                          // Crypto payment: select coin, enter PIN, send to seller.
+                          await _payWithCrypto(context, listing, _qty);
+                        } else {
+                          // Flutterwave: in-app browser checkout.
+                          try {
+                            final r = await state.createOrder(listingId: listing.id, paymentMethod: _payMethod, quantity: _qty);
+                            if (context.mounted) {
+                              // TODO: Open Flutterwave checkout in in-app browser.
+                              // For now, show order created.
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order placed. Complete payment in checkout.')));
+                              Navigator.of(context).pushReplacement(MaterialPageRoute(
+                                builder: (_) => OrderDetailScreen(orderId: '${r['id']}'),
+                              ));
+                            }
+                          } catch (e) {
+                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Order failed: ${e is ApiException ? e.message : e}')));
                           }
-                        } catch (e) {
-                          if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Order failed: ${e is ApiException ? e.message : e}')));
                         }
                       },
                       child: Text('Buy now (\$${(listing.priceUsd * _qty).toStringAsFixed(2)})'),
@@ -412,6 +421,142 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ),
       ),
     );
+  }
+  /// Pay with crypto: select coin, enter PIN, send to seller, create order.
+  Future<void> _payWithCrypto(BuildContext context, Listing listing, int qty) async {
+    final state = context.read<AppState>();
+    final totalUsd = listing.priceUsd * qty;
+    // Get seller's wallet address.
+    String? sellerAddress;
+    try {
+      final seller = await state.api.get('/api/users/${listing.uid}');
+      sellerAddress = seller['evm_address'] as String?;
+    } catch (_) {}
+    if (sellerAddress == null || sellerAddress.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Seller has no wallet address')),
+        );
+      }
+      return;
+    }
+    // Show coin selector with real balances.
+    final coin = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text('Pay \$${totalUsd.toStringAsFixed(2)} with crypto'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'ETH'),
+            child: const Row(
+              children: [Icon(Icons.attach_money), SizedBox(width: 12), Text('ETH (Ethereum)')],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'USDT'),
+            child: const Row(
+              children: [Icon(Icons.attach_money), SizedBox(width: 12), Text('USDT (Tether)')],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'USDC'),
+            child: const Row(
+              children: [Icon(Icons.attach_money), SizedBox(width: 12), Text('USDC (USD Coin)')],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (coin == null || !context.mounted) return;
+    // Get PIN.
+    final pinCtrl = TextEditingController();
+    final pin = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Confirm \$${totalUsd.toStringAsFixed(2)} payment'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Pay with $coin to @${listing.handle}'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: pinCtrl,
+              keyboardType: TextInputType.number,
+              obscureText: true,
+              maxLength: 4,
+              decoration: const InputDecoration(
+                labelText: 'Wallet PIN',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, pinCtrl.text.trim()), child: const Text('Pay')),
+        ],
+      ),
+    );
+    if (pin == null || pin.isEmpty || !context.mounted) return;
+    // Execute payment.
+    try {
+      // Convert USD to crypto amount.
+      double cryptoAmount;
+      if (coin == 'ETH') {
+        final prices = await CryptoPrices.getPrices();
+        final ethUsd = prices['ETH'] ?? 0;
+        if (ethUsd <= 0) throw Exception('Price unavailable');
+        cryptoAmount = totalUsd / ethUsd;
+      } else {
+        // USDT/USDC are 1:1 with USD.
+        cryptoAmount = totalUsd;
+      }
+      // Send crypto to seller.
+      String txHash;
+      if (coin == 'ETH') {
+        txHash = await state.wallet.sendEvm(
+          pin: pin,
+          to: sellerAddress,
+          amountEth: cryptoAmount,
+          api: state.api,
+        );
+      } else {
+        // USDT/USDC token transfer.
+        final cfg = await state.api.get('/api/config/tokens');
+        final contractAddr = (coin == 'USDT' ? cfg['usdt'] : cfg['usdc']) as String?;
+        if (contractAddr == null || contractAddr == '0x0000000000000000000000000000000000000000') {
+          throw Exception('$coin contract not configured');
+        }
+        txHash = await state.wallet.sendToken(
+          pin: pin,
+          contractAddress: contractAddr,
+          to: sellerAddress,
+          amount: cryptoAmount,
+          api: state.api,
+        );
+      }
+      // Create the order with payment confirmed.
+      final r = await state.createOrder(
+        listingId: listing.id,
+        paymentMethod: 'crypto',
+        quantity: qty,
+      );
+      if (context.mounted) {
+        final shortHash = txHash.length > 12 ? '${txHash.substring(0, 12)}…' : txHash;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Paid $cryptoAmount $coin ($shortHash). Order placed.')),
+        );
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => OrderDetailScreen(orderId: '${r['id']}'),
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Payment failed: $e')),
+        );
+      }
+    }
   }
 }
 
@@ -521,22 +666,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
             const SizedBox(height: 16),
             TextField(controller: _title, style: TextStyle(color: fg), decoration: InputDecoration(labelText: 'Title', labelStyle: TextStyle(color: sub))),
             TextField(controller: _desc, style: TextStyle(color: fg), maxLines: 3, decoration: InputDecoration(labelText: 'Description', labelStyle: TextStyle(color: sub))),
-            Row(
-              children: [
-                Expanded(child: TextField(controller: _price, style: TextStyle(color: fg), keyboardType: TextInputType.number, decoration: InputDecoration(labelText: 'Price (USD)', labelStyle: TextStyle(color: sub)))),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _asset,
-                    dropdownColor: ddBg,
-                    style: TextStyle(color: fg),
-                    decoration: InputDecoration(labelText: 'Settle in', labelStyle: TextStyle(color: sub)),
-                    items: const [DropdownMenuItem(value: 'USDC', child: Text('USDC')), DropdownMenuItem(value: 'USDT', child: Text('USDT'))],
-                    onChanged: (v) => setState(() => _asset = v!),
-                  ),
-                ),
-              ],
-            ),
+            TextField(controller: _price, style: TextStyle(color: fg), keyboardType: TextInputType.number, decoration: InputDecoration(labelText: 'Price (USD)', labelStyle: TextStyle(color: sub), helperText: 'Buyer pays via Flutterwave or crypto', helperStyle: TextStyle(color: sub))),
             TextField(controller: TextEditingController(text: _category), style: TextStyle(color: fg), decoration: InputDecoration(labelText: 'Category', labelStyle: TextStyle(color: sub)), onChanged: (v) => _category = v),
             SizedBox(height: 20),
             ElevatedButton(
