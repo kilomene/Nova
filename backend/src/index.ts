@@ -1937,6 +1937,33 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         await guard(request, env);
         return json({ packages: COIN_PACKAGES });
       }
+      // Custom coin amount purchase.
+      if (path === '/api/coins/buy-custom' && method === 'POST') {
+        const uid = await guard(request, env, 30);
+        const b = await readJson(request) as Record<string, unknown>;
+        const coins = vInt(b.coins, 'coins', 100, 1000000);
+        const usd = vNum(b.usd, 'usd', 1, 10000);
+        const email = vStr(b.email, 'email', 5, 120);
+        // Validate rate: 100 coins = $1 (allow small rounding).
+        const expectedUsd = coins / 100;
+        if (Math.abs(usd - expectedUsd) > 1.0) throw httpError(400, 'invalid_rate');
+        const txRef = `nova_coins_custom_${uid}_${newId()}`;
+        // Create Flutterwave payment.
+        const fw = await flutterwaveCharge(env, {
+          tx_ref: txRef,
+          amount: usd,
+          currency: 'USD',
+          customer: { email },
+          redirect_url: `${new URL(request.url).origin}/api/coins/confirm?tx_ref=${txRef}`,
+        });
+        const link = fw?.data?.link;
+        if (!link) throw httpError(502, 'checkout_unavailable');
+        // Record pending purchase.
+        await env.DB.prepare(
+          'INSERT INTO coin_purchases (tx_ref, uid, coins, usd, email, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        ).bind(txRef, uid, coins, usd, email, 'pending', now()).run().catch(() => {});
+        return json({ flutterwave: fw }, 201);
+      }
       if (path === '/api/coins/buy' && method === 'POST') {
         const uid = await guard(request, env, 20);
         const b = await readJson(request) as Record<string, unknown>;
@@ -3155,16 +3182,21 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         if (listing.uid === uid) throw httpError(400, 'cannot_buy_own_listing');
         // Payment method: Flutterwave fiat checkout OR crypto (wallet).
         const paymentMethod = vEnum(b.paymentMethod ?? 'flutterwave', ['flutterwave', 'crypto'] as const, 'paymentMethod');
+        const quantity = vInt(b.quantity ?? 1, 'quantity', 1, 99);
         const id = newId();
         const t = now();
+        // Ensure quantity column exists.
+        try {
+          await env.DB.prepare('ALTER TABLE orders ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1').run();
+        } catch (_) {}
         // TikTok Shop-grade itemized receipt, stored in order history.
-        const items = JSON.stringify([{ title: listing.title, priceUsd: listing.price_usd }]);
+        const items = JSON.stringify([{ title: listing.title, priceUsd: listing.price_usd, quantity }]);
         const shippingUsd = 0; // v1: seller-arranged shipping; partner integrations phase 2 (see docs/SETUP.md)
         const taxUsd = 0;
-        const totalUsd = listing.price_usd + shippingUsd + taxUsd;
+        const totalUsd = (listing.price_usd * quantity) + shippingUsd + taxUsd;
         await env.DB.batch([
-          env.DB.prepare('INSERT INTO orders (id, listing_id, buyer_uid, seller_uid, price_usd, asset, items_json, shipping_usd, tax_usd, total_usd, payment_method, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-            .bind(id, listing.id, uid, listing.uid, listing.price_usd, listing.asset, items, shippingUsd, taxUsd, totalUsd, paymentMethod, t, t),
+          env.DB.prepare('INSERT INTO orders (id, listing_id, buyer_uid, seller_uid, price_usd, quantity, asset, items_json, shipping_usd, tax_usd, total_usd, payment_method, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .bind(id, listing.id, uid, listing.uid, listing.price_usd, quantity, listing.asset, items, shippingUsd, taxUsd, totalUsd, paymentMethod, t, t),
           env.DB.prepare('INSERT INTO order_events (id, order_id, status, note, created_at) VALUES (?, ?, ?, ?, ?)').bind(newId(), id, 'pending', `Order placed (${paymentMethod})`, t),
         ]);
         await publishToUser(env, listing.uid, { type: 'order', orderId: id, status: 'pending' });
