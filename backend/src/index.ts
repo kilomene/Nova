@@ -2532,19 +2532,20 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         binds.push(now());
         binds.push(limit);
         const rows = await env.DB.prepare(
-          `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.verification_type, ${scoreExpr} AS score
+          `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.verification_type, ${scoreExpr} AS score,
+           (SELECT 1 FROM follows WHERE follower_uid = ? AND followee_uid = v.uid) as is_following
            FROM videos v JOIN users u ON u.uid = v.uid
            WHERE ${privacyExpr} AND v.created_at < ?
              AND ${BLOCK_FILTER}
            ORDER BY score DESC, v.created_at DESC LIMIT ?`,
         )
-          .bind(...binds)
+          .bind(uid, ...binds)
           .all();
         const out = [];
         for (const r of rows.results as Record<string, unknown>[]) {
           const promo = await env.DB.prepare("SELECT id FROM promotions WHERE video_id = ? AND status = 'active' AND ends_at > ?")
             .bind(r.id, now()).first();
-          out.push({ ...r, is_verified: await isVerified(env.DB, r.uid as string), affiliated_with: await affiliationFor(env.DB, r.uid as string), promoted: !!promo, media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string).catch(() => r.media_url) });
+          out.push({ ...r, is_verified: await isVerified(env.DB, r.uid as string), affiliated_with: await affiliationFor(env.DB, r.uid as string), promoted: !!promo, is_following: !!r.is_following, media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string).catch(() => r.media_url) });
         }
         return json({ videos: out, nextCursor: cursor });
       }
