@@ -11,6 +11,7 @@ import 'auth.dart';
 import 'kyc.dart';
 import 'p2p.dart';
 import 'wallet_settings.dart';
+import '../services/crypto_prices.dart';
 
 /// Nova wallet — dark+gold premium skin.
 /// Send | Receive | P2P action row; Binance-style receive flow
@@ -48,6 +49,39 @@ class _WalletScreenState extends State<WalletScreen> {
       _btcBal = '—';
     }
     if (mounted) setState(() => _loadingBal = false);
+  }
+
+  /// Format total balance in the user's selected display currency (real-time rates).
+  Future<String> _formatUsdBalance() async {
+    try {
+      final ethBal = double.tryParse(_evmBal ?? '0') ?? 0;
+      final btcBal = double.tryParse(_btcBal ?? '0') ?? 0;
+      // Real-time crypto prices
+      final prices = await CryptoPrices.getPrices();
+      final totalUsd = (ethBal * prices['ETH']!) + (btcBal * prices['BTC']!);
+      // Convert to user's selected display currency with real-time forex
+      final code = await DisplayCurrency.load();
+      final converted = await DisplayCurrency.convertFromUsd(totalUsd, code);
+      final symbol = DisplayCurrency.symbolFor(code);
+      return '$symbol${converted.toStringAsFixed(2)}';
+    } catch (_) {
+      return '—';
+    }
+  }
+
+  /// Calculate BTC equivalent with 7 decimal places (real-time rates).
+  Future<String> _btcEquivalent() async {
+    try {
+      final ethBal = double.tryParse(_evmBal ?? '0') ?? 0;
+      final btcBal = double.tryParse(_btcBal ?? '0') ?? 0;
+      final prices = await CryptoPrices.getPrices();
+      // Convert ETH to BTC using real-time prices
+      final ethBtc = prices['ETH']! / prices['BTC']!;
+      final totalBtc = btcBal + (ethBal * ethBtc);
+      return totalBtc.toStringAsFixed(7);
+    } catch (_) {
+      return '0.0000000';
+    }
   }
 
   @override
@@ -125,14 +159,20 @@ class _WalletScreenState extends State<WalletScreen> {
                                   width: 22,
                                   child: CircularProgressIndicator(
                                       strokeWidth: 2, color: gold))
-                              : Text('${_evmBal ?? '—'} ETH',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 30,
-                                      fontWeight: FontWeight.w800)),
-                          Text('${_btcBal ?? '—'} BTC',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 15)),
+                              : FutureBuilder<String>(
+                                  future: _formatUsdBalance(),
+                                  builder: (context, snap) => Text(snap.data ?? '—',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 30,
+                                          fontWeight: FontWeight.w800)),
+                                ),
+                          FutureBuilder<String>(
+                            future: _btcEquivalent(),
+                            builder: (context, snap) => Text('${snap.data ?? '0.0000000'} BTC',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 15)),
+                          ),
                         ],
                       ),
                     ),
