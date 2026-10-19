@@ -4673,6 +4673,33 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         }
       }
 
+
+      // ---------- wallet transaction history ----------
+      {
+        const m = path.match(/^\/api\/wallet\/history$/);
+        if (m && method === 'GET') {
+          const uid = await guard(request, env, 60);
+          // Coin ledger (Nova coins)
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS nova_coin_ledger (
+            id TEXT PRIMARY KEY, uid TEXT NOT NULL, delta INTEGER NOT NULL,
+            reason TEXT NOT NULL, ref TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`).run();
+          const coins = await env.DB.prepare(
+            'SELECT id, delta, reason, ref, created_at, \'coin\' as kind FROM nova_coin_ledger WHERE uid = ? ORDER BY created_at DESC LIMIT 50'
+          ).bind(uid).all();
+          // Crypto transactions (if table exists)
+          let crypto: any[] = [];
+          try {
+            const cr = await env.DB.prepare(
+              'SELECT id, amount, currency, type, tx_hash, created_at, \'crypto\' as kind FROM crypto_transactions WHERE uid = ? ORDER BY created_at DESC LIMIT 50'
+            ).bind(uid).all();
+            crypto = cr.results || [];
+          } catch (_) {}
+          // Merge and sort by date
+          const all = [...(coins.results || []), ...crypto].sort((a: any, b: any) => b.created_at - a.created_at).slice(0, 50);
+          return json({ transactions: all });
+        }
+      }
+
       return json({ error: 'not_found' }, 404);
     } catch (e) {
       const err = e as { status?: number; message?: string };
