@@ -310,11 +310,7 @@ class _CustomAmountWidgetState extends State<_CustomAmountWidget> {
                   );
                   if (!context.mounted) return;
                   if (url != null) {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => CheckoutBrowserScreen(url: url),
-                      ),
-                    );
+                    await CheckoutBrowser.open(context, url);
                   }
                 } catch (e) {
                   if (context.mounted) {
