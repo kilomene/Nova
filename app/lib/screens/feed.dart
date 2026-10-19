@@ -12,6 +12,7 @@ import '../widgets/ai_badge.dart';
 import '../widgets/gifts.dart';
 import '../widgets/comment_tile.dart';
 import '../widgets/share_sheet.dart';
+import 'sound_page.dart';
 import '../widgets/nova_icons.dart';
 import '../widgets/video_longpress_menu.dart';
 import 'discover.dart';
@@ -404,6 +405,32 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
                     isScrollControlled: true,
                     backgroundColor: Colors.transparent,
                     builder: (_) => ShareSheet(video: v),
+                  ),
+                ),
+                // Sound disc (TikTok-style) — opens sound page.
+                GestureDetector(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => SoundPage(soundLabel: v.soundLabel),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white30, width: 2),
+                        image: v.avatarUrl.isNotEmpty
+                            ? DecorationImage(image: NetworkImage(v.avatarUrl), fit: BoxFit.cover)
+                            : null,
+                        color: Colors.white24,
+                      ),
+                      child: v.avatarUrl.isEmpty
+                          ? const Icon(Icons.music_note, color: Colors.white, size: 20)
+                          : null,
+                    ),
                   ),
                 ),
                 _RailButton(
