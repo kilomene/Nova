@@ -584,6 +584,22 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  /// TikTok-style suggested accounts for a profile.
+  /// GET /api/users/:id/suggested — friends-of-friends ranked by mutuals,
+  /// topped up with popular accounts. ~20 max.
+  Future<List<SuggestedUser>> fetchSuggested(String uidOrHandle) async {
+    if (isDemo) return [];
+    try {
+      final id = Uri.encodeComponent(uidOrHandle);
+      final r = await api.get('/api/users/$id/suggested');
+      return ((r['users'] as List?) ?? [])
+          .map((e) => SuggestedUser.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<NovaUser?> fetchUser(String uidOrHandle) async {
     if (isDemo) {
       if (me != null && (uidOrHandle == me!.uid || uidOrHandle == me!.handle)) return me;
@@ -755,9 +771,9 @@ class AppState extends ChangeNotifier {
   // ---------------- orders (receipts + tracking) ----------------
 
   /// paymentMethod: 'flutterwave' (fiat) or 'crypto' (wallet).
-  Future<Map<String, dynamic>> createOrder({required String listingId, String paymentMethod = 'flutterwave'}) async {
+  Future<Map<String, dynamic>> createOrder({required String listingId, String paymentMethod = 'flutterwave', int quantity = 1}) async {
     if (isDemo) throw ApiException(400, 'demo_mode');
-    return api.post('/api/orders', {'listingId': listingId, 'paymentMethod': paymentMethod});
+    return api.post('/api/orders', {'listingId': listingId, 'paymentMethod': paymentMethod, 'quantity': quantity});
   }
 
   Future<OrderDetail> orderDetail(String orderId) async {
@@ -824,6 +840,32 @@ class AppState extends ChangeNotifier {
     try {
       final r = await api.get('/api/hashtags/${Uri.encodeComponent(t)}');
       return ((r['videos'] as List?) ?? []).map((e) => NovaVideo.fromJson((e as Map).cast<String, dynamic>())).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Saved videos for the profile Saved tab. GET /api/users/me/saved.
+  Future<List<NovaVideo>> fetchSavedVideos() async {
+    if (isDemo) return [];
+    try {
+      final r = await api.get('/api/users/me/saved');
+      return ((r['videos'] as List?) ?? [])
+          .map((e) => NovaVideo.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Reposted videos for the profile Reposts tab. GET /api/users/me/reposts.
+  Future<List<NovaVideo>> fetchRepostedVideos() async {
+    if (isDemo) return [];
+    try {
+      final r = await api.get('/api/users/me/reposts');
+      return ((r['videos'] as List?) ?? [])
+          .map((e) => NovaVideo.fromJson((e as Map).cast<String, dynamic>()))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -909,13 +951,68 @@ class AppState extends ChangeNotifier {
 
   // ---------------- marketplace ----------------
 
-  Future<void> loadListings({String? query}) async {
+  Future<void> loadListings({String? query, String? category}) async {
     if (isDemo) {
       notifyListeners();
       return;
     }
-    final r = await api.get('/api/listings', query == null ? null : {'q': query});
+    final params = <String, String>{};
+    if (query != null && query.isNotEmpty) params['q'] = query;
+    if (category != null && category.isNotEmpty) params['category'] = category;
+    final r = await api.get('/api/listings', params.isEmpty ? null : params);
     listings = ((r['listings'] as List?) ?? []).map((e) => Listing.fromJson((e as Map).cast<String, dynamic>())).toList();
+    notifyListeners();
+  }
+
+  // ---------- cart (with quantities) ----------
+  final Map<String, int> _cart = {}; // listingId -> quantity
+  Map<String, int> get cart => Map.unmodifiable(_cart);
+  int get cartCount => _cart.values.fold(0, (a, b) => a + b);
+
+  void addToCart(String listingId, {int qty = 1}) {
+    _cart[listingId] = (_cart[listingId] ?? 0) + qty;
+    notifyListeners();
+  }
+
+  void setCartQty(String listingId, int qty) {
+    if (qty <= 0) {
+      _cart.remove(listingId);
+    } else {
+      _cart[listingId] = qty;
+    }
+    notifyListeners();
+  }
+
+  void removeFromCart(String listingId) {
+    _cart.remove(listingId);
+    notifyListeners();
+  }
+
+  void clearCart() {
+    _cart.clear();
+    notifyListeners();
+  }
+
+  double cartTotal() {
+    double total = 0;
+    for (final entry in _cart.entries) {
+      final listing = listings.where((l) => l.id == entry.key).firstOrNull;
+      if (listing != null) total += listing.priceUsd * entry.value;
+    }
+    return total;
+  }
+
+  // ---------- bookmarked products ----------
+  final Set<String> _bookmarkedProducts = {};
+  Set<String> get bookmarkedProducts => Set.unmodifiable(_bookmarkedProducts);
+  bool isProductBookmarked(String id) => _bookmarkedProducts.contains(id);
+
+  void toggleProductBookmark(String id) {
+    if (_bookmarkedProducts.contains(id)) {
+      _bookmarkedProducts.remove(id);
+    } else {
+      _bookmarkedProducts.add(id);
+    }
     notifyListeners();
   }
 
@@ -964,9 +1061,14 @@ class AppState extends ChangeNotifier {
     return ((r['messages'] as List?) ?? []).map((e) => ChatMessage.fromJson((e as Map).cast<String, dynamic>())).toList();
   }
 
-  Future<void> sendMessage(String peerUid, String text, {String mediaKey = ''}) async {
+  Future<void> sendMessage(String peerUid, String text,
+      {String mediaKey = '', int durationS = 0}) async {
     if (isDemo) return;
-    await api.post('/api/threads/$peerUid/messages', {'text': text, if (mediaKey.isNotEmpty) 'mediaKey': mediaKey});
+    await api.post('/api/threads/$peerUid/messages', {
+      'text': text,
+      if (mediaKey.isNotEmpty) 'mediaKey': mediaKey,
+      if (durationS > 0) 'durationS': durationS,
+    });
   }
 
   /// Upload a chat attachment (photo/video) and return the media key.
