@@ -1540,10 +1540,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Show crypto options: select coin from wallet with real balances.
+  /// Show crypto options: select coin from wallet with REAL balances.
   void _showCryptoOptions(BuildContext context) {
     final state = context.read<AppState>();
-    final wallet = state.wallet;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1560,9 +1559,9 @@ class _ChatScreenState extends State<ChatScreen> {
               const Text('Select coin from your wallet',
                   style: TextStyle(color: Colors.grey)),
               const SizedBox(height: 16),
-              // Show wallet coins with real balances
+              // Show wallet coins with REAL balances from WalletService.
               FutureBuilder<Map<String, String>>(
-                future: _getWalletBalances(wallet),
+                future: _getRealBalances(state),
                 builder: (ctx, snap) {
                   if (!snap.hasData) {
                     return const Center(child: CircularProgressIndicator());
@@ -1570,19 +1569,27 @@ class _ChatScreenState extends State<ChatScreen> {
                   final balances = snap.data!;
                   return Column(
                     children: balances.entries.map((e) {
+                      final hasBalance = (double.tryParse(e.value) ?? 0) > 0;
                       return ListTile(
                         leading: Icon(
                           e.key == 'BTC' ? Icons.currency_bitcoin : Icons.attach_money,
-                          color: Theme.of(context).colorScheme.primary,
+                          color: hasBalance
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.grey,
                         ),
                         title: Text(e.key,
                             style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('Balance: ${e.value}'),
+                        subtitle: Text('Balance: ${e.value}',
+                            style: TextStyle(
+                                color: hasBalance ? null : Colors.grey)),
                         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _sendCryptoDialog(context, e.key, e.value);
-                        },
+                        enabled: hasBalance,
+                        onTap: hasBalance
+                            ? () {
+                                Navigator.pop(ctx);
+                                _sendCryptoDialog(context, e.key, e.value);
+                              }
+                            : null,
                       );
                     }).toList(),
                   );
@@ -1595,26 +1602,26 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Future<Map<String, String>> _getWalletBalances(dynamic wallet) async {
-    final result = <String, String>{};
+  /// Get REAL wallet balances from WalletService.
+  Future<Map<String, String>> _getRealBalances(AppState state) async {
+    final result = <String, String>{'ETH': '0', 'BTC': '0', 'USDT': '0', 'USDC': '0'};
+    // ETH (EVM) balance — real on-chain.
     try {
-      result['BTC'] = await wallet.btcBalance() ?? '0';
-    } catch (_) {
-      result['BTC'] = '0';
-    }
+      result['ETH'] = await state.wallet.evmBalance();
+    } catch (_) {}
+    // BTC balance — real on-chain.
     try {
-      result['ETH'] = await wallet.evmBalance() ?? '0';
-    } catch (_) {
-      result['ETH'] = '0';
-    }
-    // USDT/USDC would come from token balances
-    result['USDT'] = '0';
-    result['USDC'] = '0';
+      result['BTC'] = await state.wallet.btcBalance();
+    } catch (_) {}
+    // USDT/USDC are ERC-20 tokens — check via backend or token contract.
+    // For now, show 0; full token balance lookup is a separate integration.
     return result;
   }
 
+  /// Send crypto dialog — fetches peer's wallet address and sends for real.
   void _sendCryptoDialog(BuildContext context, String coin, String balance) {
     final amountCtrl = TextEditingController();
+    final pinCtrl = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1632,6 +1639,17 @@ class _ChatScreenState extends State<ChatScreen> {
                 border: const OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: pinCtrl,
+              keyboardType: TextInputType.number,
+              obscureText: true,
+              maxLength: 4,
+              decoration: const InputDecoration(
+                labelText: 'Wallet PIN',
+                border: OutlineInputBorder(),
+              ),
+            ),
           ],
         ),
         actions: [
@@ -1641,19 +1659,72 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-              final amount = amountCtrl.text.trim();
-              if (amount.isEmpty) return;
+              final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
+              final pin = pinCtrl.text.trim();
+              if (amount <= 0 || pin.isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Enter amount and PIN')),
+                );
+                return;
+              }
               Navigator.pop(ctx);
-              // TODO: Implement actual crypto send via wallet
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Sending $amount $coin...')),
-              );
+              await _doSendCrypto(context, coin, amount, pin);
             },
             child: const Text('Send'),
           ),
         ],
       ),
     );
+  }
+
+  /// Execute the crypto send.
+  Future<void> _doSendCrypto(
+      BuildContext context, String coin, double amount, String pin) async {
+    final state = context.read<AppState>();
+    try {
+      // Get peer's wallet address from their profile.
+      final peer = await state.api.get('/api/users/${widget.peerUid}');
+      final toAddress = coin == 'BTC'
+          ? peer['btc_address'] as String?
+          : peer['evm_address'] as String?;
+      if (toAddress == null || toAddress.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Recipient has no wallet address for this coin')),
+          );
+        }
+        return;
+      }
+      // Send via WalletService.
+      String txHash;
+      if (coin == 'BTC') {
+        // BTC send not yet implemented in WalletService.
+        throw Exception('BTC send coming soon');
+      } else {
+        txHash = await state.wallet.sendEvm(
+          pin: pin,
+          to: toAddress,
+          amountEth: amount,
+          api: state.api,
+        );
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sent $amount $coin (tx: ${txHash.substring(0, 10)}...)')),
+        );
+      }
+      // Send a chat message recording the transfer.
+      await state.sendMessage(
+          widget.peerUid, '💰 Sent $amount $coin');
+      _load();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Send failed: $e')),
+        );
+      }
+    }
   }
 
 
