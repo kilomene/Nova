@@ -37,8 +37,17 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   Future<void> _loadBalances() async {
-    final w = context.read<AppState>().wallet;
+    final st = context.read<AppState>();
+    final w = st.wallet;
     if (!w.hasWallet) return;
+    // Register wallet addresses with the backend so other users can send
+    // crypto to this user (DM crypto send resolves via /api/users/:uid).
+    try {
+      await st.api.post('/api/users/wallet-addresses', {
+        'evm_address': w.evmAddress ?? '',
+        'btc_address': w.btcAddress ?? '',
+      });
+    } catch (_) {}
     setState(() => _loadingBal = true);
     try {
       _evmBal = await w.evmBalance();
