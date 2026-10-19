@@ -13,6 +13,7 @@ import 'follow_list.dart';
 import 'qr_code.dart';
 import 'profile_views.dart';
 import '../widgets/suggested_accounts.dart';
+import '../widgets/default_avatar.dart';
 import 'inbox.dart';
 import 'edit_profile.dart';
 import 'monetization.dart';
@@ -220,51 +221,39 @@ class _ProfileScreenState extends State<ProfileScreen>
                 Stack(
                   alignment: Alignment.center,
                   children: [
-                    GestureDetector(
-                      // Long-press shows the full profile picture.
+                    UserAvatar(
+                      avatarUrl: u.avatarUrl,
+                      radius: 48,
+                      // Long-press (3-4s) shows the full profile picture.
                       onLongPress: () {
-                        if (u.avatarUrl.isNotEmpty) {
-                          showDialog(
-                            context: context,
-                            builder: (_) => Dialog(
-                              backgroundColor: Colors.transparent,
-                              insetPadding: const EdgeInsets.all(16),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: Image.network(
-                                      u.avatarUrl,
-                                      fit: BoxFit.contain,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context),
-                                    child: const Text('Close',
-                                        style: TextStyle(color: Colors.white)),
-                                  ),
-                                ],
-                              ),
+                        showDialog(
+                          context: context,
+                          builder: (_) => Dialog(
+                            backgroundColor: Colors.transparent,
+                            insetPadding: const EdgeInsets.all(16),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: u.avatarUrl.isNotEmpty
+                                      ? Image.network(
+                                          u.avatarUrl,
+                                          fit: BoxFit.contain,
+                                        )
+                                      : const DefaultAvatar(radius: 120),
+                                ),
+                                const SizedBox(height: 12),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text('Close',
+                                      style: TextStyle(color: Colors.white)),
+                                ),
+                              ],
                             ),
-                          );
-                        }
+                          ),
+                        );
                       },
-                      child: CircleAvatar(
-                        radius: 48,
-                        backgroundColor: isDark ? Colors.white12 : Colors.black12,
-                        backgroundImage: u.avatarUrl.isNotEmpty
-                            ? NetworkImage(u.avatarUrl)
-                            : null,
-                        child: u.avatarUrl.isEmpty
-                            ? Text(
-                                u.handle.isNotEmpty
-                                    ? u.handle[0].toUpperCase()
-                                    : '?',
-                                style: TextStyle(fontSize: 34, color: fg))
-                            : null,
-                      ),
                     ),
                     if (!widget.self && !_isFollowing)
                       Positioned(
