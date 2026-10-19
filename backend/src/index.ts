@@ -3115,8 +3115,9 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       }
       if (path === '/api/listings' && method === 'POST') {
         const uid = await guard(request, env, 60);
-        // Strict seller onboarding: only verified sellers may list. Buyers need nothing.
-        if ((await sellerStatus(env.DB, uid)) !== 'verified') throw httpError(403, 'seller_verification_required');
+        // Verified users (any tier) are auto-approved as sellers. Others need seller KYC.
+        const isVerifiedUser = await isVerified(env.DB, uid);
+        if (!isVerifiedUser && (await sellerStatus(env.DB, uid)) !== 'verified') throw httpError(403, 'seller_verification_required');
         if (await deviceRestricted(env.DB, uid)) throw httpError(403, 'device_restricted');
         const b = await readJson(request) as Record<string, unknown>;
         const title = vStr(b.title, 'title', 1, 120);
