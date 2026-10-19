@@ -7,6 +7,7 @@ import '../models.dart';
 import '../services/api_client.dart';
 import '../state/app_state.dart';
 import 'orders.dart';
+import 'cart_screen.dart';
 import 'seller.dart';
 
 /// Marketplace: listings, product detail, create listing.
@@ -20,6 +21,11 @@ class MarketplaceScreen extends StatefulWidget {
 
 class _MarketplaceScreenState extends State<MarketplaceScreen> {
   final _q = TextEditingController();
+  String _selectedCategory = 'all';
+  static const _categories = [
+    'all', 'electronics', 'fashion', 'home', 'beauty', 'sports',
+    'toys', 'books', 'food', 'health', 'automotive', 'other',
+  ];
 
   @override
   void initState() {
@@ -60,7 +66,37 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     final thumbIcon = isDark ? Colors.white24 : Colors.black26;
     return Scaffold(
       backgroundColor: bg,
-      appBar: AppBar(backgroundColor: bg, title: Text('Marketplace', style: TextStyle(color: fg))),
+      appBar: AppBar(
+        backgroundColor: bg,
+        title: Text('Marketplace', style: TextStyle(color: fg)),
+        actions: [
+          // Cart icon with badge
+          Stack(
+            children: [
+              IconButton(
+                icon: Icon(Icons.shopping_cart_outlined, color: fg),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const CartScreen()),
+                ),
+              ),
+              if (state.cartCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text('${state.cartCount}',
+                        style: const TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
@@ -81,6 +117,32 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       ),
       body: Column(
         children: [
+          // Category chips
+          SizedBox(
+            height: 40,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: _categories.map((cat) {
+                final selected = _selectedCategory == cat;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilterChip(
+                    label: Text(cat[0].toUpperCase() + cat.substring(1)),
+                    selected: selected,
+                    onSelected: (_) {
+                      setState(() => _selectedCategory = cat);
+                      state.loadListings(
+                        query: _q.text.trim().isEmpty ? null : _q.text.trim(),
+                        category: cat == 'all' ? null : cat,
+                      );
+                    },
+                    selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.all(12),
             child: TextField(
@@ -123,12 +185,39 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                                    gradient: LinearGradient(colors: [thumbBg1, thumbBg2]),
-                                  ),
-                                  child: Center(child: Icon(Icons.shopping_bag_outlined, color: thumbIcon, size: 44)),
+                                child: Stack(
+                                  children: [
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                                        gradient: LinearGradient(colors: [thumbBg1, thumbBg2]),
+                                      ),
+                                      child: Center(child: Icon(Icons.shopping_bag_outlined, color: thumbIcon, size: 44)),
+                                    ),
+                                    Positioned(
+                                      top: 6,
+                                      right: 6,
+                                      child: GestureDetector(
+                                        onTap: () => state.toggleProductBookmark(l.id),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black54,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            state.isProductBookmarked(l.id)
+                                                ? Icons.bookmark
+                                                : Icons.bookmark_border,
+                                            color: state.isProductBookmarked(l.id)
+                                                ? Theme.of(context).colorScheme.primary
+                                                : Colors.white,
+                                            size: 18,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                               Padding(
@@ -173,6 +262,7 @@ class ProductDetailScreen extends StatefulWidget {
 
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
   String _payMethod = 'flutterwave'; // flutterwave (fiat) | crypto (wallet)
+  int _qty = 1;
 
   @override
   Widget build(BuildContext context) {
@@ -241,14 +331,62 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ],
                     ),
                   ),
+                  SizedBox(height: 12),
+                  // Quantity selector
+                  Row(
+                    children: [
+                      Text('Quantity', style: TextStyle(color: fg, fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        color: sub,
+                        onPressed: _qty > 1 ? () => setState(() => _qty--) : null,
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: card,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text('$_qty',
+                            style: TextStyle(color: fg, fontWeight: FontWeight.bold, fontSize: 16)),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        color: Theme.of(context).colorScheme.primary,
+                        onPressed: _qty < 99 ? () => setState(() => _qty++) : null,
+                      ),
+                    ],
+                  ),
                   SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
-                      onPressed: () async {
+                  // Add to Cart + Buy Now row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.shopping_cart_outlined),
+                          label: const Text('Add to Cart'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          onPressed: () {
+                            state.addToCart(listing.id, qty: _qty);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Added $_qty to cart')),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: Theme.of(context).colorScheme.primary,
+                              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                              padding: const EdgeInsets.symmetric(vertical: 14)),
+                          onPressed: () async {
                         try {
-                          final r = await state.createOrder(listingId: listing.id, paymentMethod: _payMethod);
+                          final r = await state.createOrder(listingId: listing.id, paymentMethod: _payMethod, quantity: _qty);
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Order placed. Receipt saved to order history.')));
                             Navigator.of(context).pushReplacement(MaterialPageRoute(
@@ -259,8 +397,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Order failed: ${e is ApiException ? e.message : e}')));
                         }
                       },
-                      child: const Text('Buy now'),
-                    ),
+                      child: Text('Buy now (\$${(listing.priceUsd * _qty).toStringAsFixed(2)})'),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   Text('Every purchase generates an itemized receipt + shipping timeline in your order history.',
