@@ -149,6 +149,7 @@ class NovaVideo {
   int viewCount;
   final int createdAt;
   bool likedByMe;
+  bool isFollowing;
   final bool isVerified;
   final String verificationType; // 'personal' | 'business' | ''
   final Affiliation? affiliatedWith;
@@ -172,6 +173,7 @@ class NovaVideo {
     this.viewCount = 0,
     required this.createdAt,
     this.likedByMe = false,
+    this.isFollowing = false,
     this.isVerified = false,
     this.verificationType = '',
     this.affiliatedWith,
@@ -260,6 +262,7 @@ class VideoComment {
         affiliatedWith: parseAffiliation(j['affiliated_with'] ?? j['affiliatedWith']),
         likeCount: (j['like_count'] ?? 0) as int,
         likedByMe: (j['liked_by_me'] ?? false) == true,
+        isFollowing: (j['is_following'] ?? false) == true,
         replyCount: (j['reply_count'] ?? 0) as int,
       );
 }
