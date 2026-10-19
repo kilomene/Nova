@@ -63,10 +63,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
         child: const Icon(Icons.add),
-        // Strict seller onboarding: only verified sellers may list.
+        // Verified users are auto-approved as sellers (no separate KYC).
+        // Only unverified users see the seller onboarding.
         onPressed: () {
           final st = context.read<AppState>();
-          if (!st.isDemo && st.sellerProfile.status != 'verified') {
+          final isVerifiedUser = st.me?.isVerified == true;
+          final isVerifiedSeller = st.sellerProfile.status == 'verified';
+          if (!st.isDemo && !isVerifiedUser && !isVerifiedSeller) {
             Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SellerOnboardingScreen()));
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sellers must verify identity first (buyers need nothing).')));
           } else {
