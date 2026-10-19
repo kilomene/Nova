@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -109,10 +110,18 @@ class ApiClient {
   Future<Map<String, dynamic>> upload(String path, String filePath, {String field = 'file'}) async {
     final token = await tokenProvider();
     final uri = Uri.parse('$baseUrl$path');
-    final req = http.MultipartRequest('POST', uri);
+    // Raw binary upload (bypasses Workers formData 0-byte bug).
+    // Backend reads X-Filename header and raw body bytes.
+    final file = File(filePath);
+    final bytes = await file.readAsBytes();
+    if (bytes.isEmpty) throw ApiException(400, 'local_file_empty');
+    final filename = filePath.split('/').last;
+    final ct = _guessContentType(filePath);
+    final req = http.Request('POST', uri);
     if (token != null) req.headers['Authorization'] = 'Bearer $token';
-    req.files.add(await http.MultipartFile.fromPath(field, filePath,
-        contentType: _guessContentType(filePath)));
+    req.headers['X-Filename'] = filename;
+    if (ct != null) req.headers['Content-Type'] = '${ct.type}/${ct.subtype}';
+    req.bodyBytes = bytes;
     final streamed = await req.send();
     final resp = await http.Response.fromStream(streamed);
     return _decode(resp);
