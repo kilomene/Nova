@@ -216,27 +216,43 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: Column(
               children: [
                 const SizedBox(height: 8),
-                // Centered avatar with follow badge.
+                // Centered avatar with follow badge (TikTok-style: clean circle, no solid ring).
                 Stack(
                   alignment: Alignment.center,
                   children: [
-                    Container(
-                      padding: EdgeInsets.all(3),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [Theme.of(context).colorScheme.primary, Theme.of(context).colorScheme.primary],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: gold.withValues(alpha: 0.35),
-                            blurRadius: 16,
-                            spreadRadius: 1,
-                          ),
-                        ],
-                      ),
+                    GestureDetector(
+                      // Long-press shows the full profile picture.
+                      onLongPress: () {
+                        if (u.avatarUrl.isNotEmpty) {
+                          showDialog(
+                            context: context,
+                            builder: (_) => Dialog(
+                              backgroundColor: Colors.transparent,
+                              insetPadding: const EdgeInsets.all(16),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Image.network(
+                                      u.avatarUrl,
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: const Text('Close',
+                                        style: TextStyle(color: Colors.white)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+                      },
                       child: CircleAvatar(
-                        radius: 46,
+                        radius: 48,
                         backgroundColor: isDark ? Colors.white12 : Colors.black12,
                         backgroundImage: u.avatarUrl.isNotEmpty
                             ? NetworkImage(u.avatarUrl)
