@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -373,15 +374,15 @@ class AppState extends ChangeNotifier {
           if (boost.isNotEmpty) q = {'boost': boost};
         }
         final r = await api.get(following ? '/api/feed/following' : '/api/feed', q);
-        feed = ((r['videos'] as List?) ?? [])
+        final videosJson = ((r['videos'] as List?) ?? []);
+        feed = videosJson
             .map((e) => NovaVideo.fromJson((e as Map).cast<String, dynamic>()))
             .toList();
-        // Cache the feed for offline viewing.
+        // Cache the raw JSON for offline viewing.
         if (feed.isNotEmpty && !following) {
           try {
             final prefs = await SharedPreferences.getInstance();
-            final jsonList = feed.map((v) => v.toJson()).toList();
-            await prefs.setString('nova_cached_feed', jsonEncode(jsonList));
+            await prefs.setString('nova_cached_feed', jsonEncode(videosJson));
             await prefs.setInt('nova_cached_feed_time', DateTime.now().millisecondsSinceEpoch);
           } catch (_) {}
         }
