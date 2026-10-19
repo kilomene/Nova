@@ -1602,7 +1602,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Get REAL wallet balances from WalletService.
+  /// Get REAL wallet balances from WalletService (including ERC-20 tokens).
   Future<Map<String, String>> _getRealBalances(AppState state) async {
     final result = <String, String>{'ETH': '0', 'BTC': '0', 'USDT': '0', 'USDC': '0'};
     // ETH (EVM) balance — real on-chain.
@@ -1613,8 +1613,18 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       result['BTC'] = await state.wallet.btcBalance();
     } catch (_) {}
-    // USDT/USDC are ERC-20 tokens — check via backend or token contract.
-    // For now, show 0; full token balance lookup is a separate integration.
+    // USDT/USDC — real ERC-20 token balances via contract.
+    try {
+      final cfg = await state.api.get('/api/config/tokens');
+      final usdtAddr = cfg['usdt'] as String?;
+      final usdcAddr = cfg['usdc'] as String?;
+      if (usdtAddr != null && usdtAddr != '0x0000000000000000000000000000000000000000') {
+        result['USDT'] = await state.wallet.usdtBalance(usdtAddr);
+      }
+      if (usdcAddr != null && usdcAddr != '0x0000000000000000000000000000000000000000') {
+        result['USDC'] = await state.wallet.usdcBalance(usdcAddr);
+      }
+    } catch (_) {}
     return result;
   }
 
@@ -1699,8 +1709,26 @@ class _ChatScreenState extends State<ChatScreen> {
       // Send via WalletService.
       String txHash;
       if (coin == 'BTC') {
-        // BTC send not yet implemented in WalletService.
-        throw Exception('BTC send coming soon');
+        txHash = await state.wallet.sendBtc(
+          pin: pin,
+          to: toAddress,
+          amountBtc: amount,
+          api: state.api,
+        );
+      } else if (coin == 'USDT' || coin == 'USDC') {
+        // ERC-20 token transfer.
+        final cfg = await state.api.get('/api/config/tokens');
+        final contractAddr = (coin == 'USDT' ? cfg['usdt'] : cfg['usdc']) as String?;
+        if (contractAddr == null || contractAddr == '0x0000000000000000000000000000000000000000') {
+          throw Exception('$coin contract not configured');
+        }
+        txHash = await state.wallet.sendToken(
+          pin: pin,
+          contractAddress: contractAddr,
+          to: toAddress,
+          amount: amount,
+          api: state.api,
+        );
       } else {
         txHash = await state.wallet.sendEvm(
           pin: pin,
