@@ -1937,6 +1937,18 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         await guard(request, env);
         return json({ packages: COIN_PACKAGES });
       }
+      // Token contract addresses (Sepolia testnet). Update when real tokens are deployed.
+      if (path === '/api/config/tokens' && method === 'GET') {
+        await guard(request, env);
+        return json({
+          // Sepolia testnet token addresses — replace with actual USDT/USDC test tokens.
+          // These are placeholders; the admin can update them via the backend.
+          usdt: '0x0000000000000000000000000000000000000000',
+          usdc: '0x0000000000000000000000000000000000000000',
+          chainId: 11155111,
+          chainName: 'sepolia',
+        });
+      }
       // Custom coin amount purchase.
       if (path === '/api/coins/buy-custom' && method === 'POST') {
         const uid = await guard(request, env, 30);
