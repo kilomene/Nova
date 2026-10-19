@@ -376,12 +376,47 @@ class AppState extends ChangeNotifier {
         feed = ((r['videos'] as List?) ?? [])
             .map((e) => NovaVideo.fromJson((e as Map).cast<String, dynamic>()))
             .toList();
+        // Cache the feed for offline viewing.
+        if (feed.isNotEmpty && !following) {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final jsonList = feed.map((v) => v.toJson()).toList();
+            await prefs.setString('nova_cached_feed', jsonEncode(jsonList));
+            await prefs.setInt('nova_cached_feed_time', DateTime.now().millisecondsSinceEpoch);
+          } catch (_) {}
+        }
       }
     } catch (_) {
+      // Offline: load cached feed instead of showing empty.
+      if (feed.isEmpty && !following) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final cached = prefs.getString('nova_cached_feed');
+          if (cached != null && cached.isNotEmpty) {
+            final jsonList = jsonDecode(cached) as List;
+            feed = jsonList
+                .map((e) => NovaVideo.fromJson((e as Map).cast<String, dynamic>()))
+                .toList();
+          }
+        } catch (_) {}
+      }
       if (feed.isEmpty && isDemo) _seedDemo();
     }
     feedLoading = false;
     notifyListeners();
+  }
+
+  /// Check if we're showing cached (offline) data.
+  Future<bool> isShowingCachedFeed() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedTime = prefs.getInt('nova_cached_feed_time') ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      // If cache is older than 1 hour and feed is from cache, we're offline.
+      return feed.isNotEmpty && (now - cachedTime) > 3600000;
+    } catch (_) {
+      return false;
+    }
   }
 
   void _seedDemo() {
