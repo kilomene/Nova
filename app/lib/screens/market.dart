@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models.dart';
 import '../services/api_client.dart';
@@ -287,6 +289,19 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
   String _asset = 'USDC';
   String _category = 'general';
   bool _busy = false;
+  final List<String> _imagePaths = [];
+  final _picker = ImagePicker();
+
+  Future<void> _pickImages() async {
+    try {
+      final images = await _picker.pickMultiImage();
+      if (images.isNotEmpty && mounted) {
+        setState(() {
+          _imagePaths.addAll(images.map((x) => x.path).take(5 - _imagePaths.length));
+        });
+      }
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -303,6 +318,67 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Product images
+            Text('Product photos', style: TextStyle(color: fg, fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 100,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  // Add button
+                  if (_imagePaths.length < 5)
+                    GestureDetector(
+                      onTap: _pickImages,
+                      child: Container(
+                        width: 100,
+                        height: 100,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: ddBg,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: sub.withOpacity(0.3)),
+                        ),
+                        child: Icon(Icons.add_photo_alternate, color: sub, size: 36),
+                      ),
+                    ),
+                  // Selected images
+                  for (int i = 0; i < _imagePaths.length; i++)
+                    Stack(
+                      children: [
+                        Container(
+                          width: 100,
+                          height: 100,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            image: DecorationImage(
+                              image: FileImage(File(_imagePaths[i])),
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 4,
+                          right: 12,
+                          child: GestureDetector(
+                            onTap: () => setState(() => _imagePaths.removeAt(i)),
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.close, size: 14, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
             TextField(controller: _title, style: TextStyle(color: fg), decoration: InputDecoration(labelText: 'Title', labelStyle: TextStyle(color: sub))),
             TextField(controller: _desc, style: TextStyle(color: fg), maxLines: 3, decoration: InputDecoration(labelText: 'Description', labelStyle: TextStyle(color: sub))),
             Row(
@@ -331,12 +407,21 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                       if (_title.text.trim().isEmpty || _price.text.isEmpty) return;
                       setState(() => _busy = true);
                       try {
-                        await context.read<AppState>().createListing({
+                        final state = context.read<AppState>();
+                        // Upload product images first.
+                        final imageKeys = <String>[];
+                        for (final path in _imagePaths) {
+                          final up = await state.api.upload('/api/uploads', path);
+                          final key = up['key'] as String?;
+                          if (key != null && key.isNotEmpty) imageKeys.add(key);
+                        }
+                        await state.createListing({
                           'title': _title.text.trim(),
                           'description': _desc.text.trim(),
                           'priceUsd': double.parse(_price.text),
                           'asset': _asset,
                           'category': _category.trim().isEmpty ? 'general' : _category.trim(),
+                          'mediaKeys': imageKeys,
                         });
                         if (mounted) Navigator.of(context).pop();
                       } catch (e) {
