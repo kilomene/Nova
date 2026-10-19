@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web3dart/web3dart.dart';
 
 import 'api_client.dart';
+import 'btc_tx.dart';
 import 'kyc_service.dart';
 import 'wallet_crypto.dart';
 
@@ -180,6 +181,139 @@ class WalletService {
     final funded = _numAfter(body, '"funded_txo_sum":');
     final spent = _numAfter(body, '"spent_txo_sum":');
     return ((funded - spent) / 100000000).toString();
+  }
+
+  /// ERC-20 token balance (e.g. USDT, USDC) via balanceOf call.
+  /// [contractAddress] is the token contract on the same chain.
+  /// Returns the balance in token units (handles decimals automatically).
+  Future<String> tokenBalance(String contractAddress) async {
+    if (evmAddress == null) throw WalletException('no_wallet');
+    final client = Web3Client(sepoliaRpc, http.Client());
+    try {
+      final contract = DeployedContract(
+        ContractAbi.fromJson(
+          '[{"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"type":"function"},'
+          '{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"type":"function"}]',
+          'ERC20',
+        ),
+        EthereumAddress.fromHex(contractAddress),
+      );
+      final balanceOf = contract.function('balanceOf');
+      final decimalsFn = contract.function('decimals');
+      final result = await client.call(
+        contract: contract,
+        function: balanceOf,
+        params: [EthereumAddress.fromHex(evmAddress!)],
+      );
+      final decimalsResult = await client.call(
+        contract: contract,
+        function: decimalsFn,
+        params: [],
+      );
+      final raw = result.first as BigInt;
+      final decimals = (decimalsResult.first as BigInt).toInt();
+      final divisor = BigInt.from(10).pow(decimals);
+      final whole = raw ~/ divisor;
+      final frac = raw % divisor;
+      if (frac == BigInt.zero) return whole.toString();
+      // Show up to 6 decimal places.
+      var fracStr = frac.toString().padLeft(decimals, '0');
+      fracStr = fracStr.substring(0, fracStr.length.clamp(0, 6)).replaceAll(RegExp(r'0+\$'), '');
+      return fracStr.isEmpty ? whole.toString() : '$whole.$fracStr';
+    } finally {
+      client.dispose();
+    }
+  }
+
+  /// USDT balance (contract address from backend config).
+  Future<String> usdtBalance(String contractAddress) => tokenBalance(contractAddress);
+
+  /// USDC balance (contract address from backend config).
+  Future<String> usdcBalance(String contractAddress) => tokenBalance(contractAddress);
+
+  /// ERC-20 token transfer.
+  Future<String> sendToken({
+    required String pin,
+    required String contractAddress,
+    required String to,
+    required double amount,
+    required ApiClient api,
+  }) async {
+    if (amount <= 0) throw WalletException('bad_amount');
+    final privHex = await _unlockEvmKey(pin, api);
+    final client = Web3Client(sepoliaRpc, http.Client());
+    try {
+      final contract = DeployedContract(
+        ContractAbi.fromJson(
+          '[{"constant":false,"inputs":[{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transfer","outputs":[{"name":"","type":"bool"}],"type":"function"},'
+          '{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"type":"function"}]',
+          'ERC20',
+        ),
+        EthereumAddress.fromHex(contractAddress),
+      );
+      final decimalsResult = await client.call(
+        contract: contract,
+        function: contract.function('decimals'),
+        params: [],
+      );
+      final decimals = (decimalsResult.first as BigInt).toInt();
+      final rawAmount = BigInt.from((amount * BigInt.from(10).pow(decimals).toDouble()).round());
+      final creds = EthPrivateKey.fromHex(privHex);
+      final hash = await client.sendTransaction(
+        creds,
+        Transaction.callContract(
+          contract: contract,
+          function: contract.function('transfer'),
+          parameters: [EthereumAddress.fromHex(to), rawAmount],
+        ),
+        chainId: 11155111, // Sepolia
+      );
+      return hash;
+    } finally {
+      client.dispose();
+    }
+  }
+
+  /// BTC send: fetch UTXOs, build P2PKH transaction, sign, broadcast.
+  /// Real mainnet transaction via Blockstream. Returns the txid.
+  /// The caller MUST NOT log the private key.
+  Future<String> sendBtc({
+    required String pin,
+    required String to,
+    required double amountBtc,
+    required ApiClient api,
+  }) async {
+    if (amountBtc <= 0) throw WalletException('bad_amount');
+    if (btcAddress == null) throw WalletException('no_wallet');
+    final privHex = await _unlockBtcKey(pin, api);
+    try {
+      final amountSat = (amountBtc * 100000000).round();
+      return await sendBtcTx(
+        fromAddress: btcAddress!,
+        privHex: privHex,
+        toAddress: to,
+        amountSat: amountSat,
+      );
+    } on BtcTxException catch (e) {
+      throw WalletException('btc_${e.code}');
+    }
+  }
+
+  /// Decrypt the mnemonic with the PIN and derive the BTC private key
+  /// (m/44'/0'/0'/0/0). The caller MUST clear the returned value after use.
+  Future<String> _unlockBtcKey(String pin, ApiClient api) async {
+    KeystoreBundle? bundle;
+    if (api.isDemo) {
+      bundle = await _localBundle();
+    } else {
+      final r = await api.get('/api/keystore');
+      final b = r['bundle'];
+      if (b is Map<String, dynamic>) bundle = KeystoreBundle.fromJson(b);
+    }
+    if (bundle == null) throw WalletException('no_wallet');
+    final mnemonic = await KeystoreCrypto.decrypt(bundle: bundle, pin: pin);
+    final w = deriveWallet(mnemonic);
+    return w.btcPrivateKeyHex;
   }
 
   double _numAfter(String body, String key) {
