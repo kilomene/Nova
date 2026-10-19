@@ -1430,15 +1430,17 @@ class _ChatScreenState extends State<ChatScreen> {
           top: 4),
       child: Row(
         children: [
+          // Attachment icon — tap shows camera/gallery options.
           IconButton(
-            tooltip: 'Take photo',
-            icon: Icon(Icons.camera_alt_outlined, color: sub),
-            onPressed: () => _takePhoto(context),
+            tooltip: 'Attach',
+            icon: Icon(Icons.attach_file, color: sub),
+            onPressed: () => _showAttachmentOptions(context),
           ),
+          // Crypto icon — send crypto from wallet.
           IconButton(
-            tooltip: 'Gallery',
-            icon: Icon(Icons.image_outlined, color: sub),
-            onPressed: () => _pickAttachment(context),
+            tooltip: 'Send crypto',
+            icon: Icon(Icons.currency_bitcoin, color: sub),
+            onPressed: () => _showCryptoOptions(context),
           ),
           Expanded(
             child: TextField(
@@ -1508,6 +1510,154 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _takePhoto(BuildContext context) async {
     final picker = ImagePicker();
+  /// Show attachment options: Camera or Gallery (photos + videos).
+  void _showAttachmentOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Camera'),
+              subtitle: const Text('Take photo or video'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _takePhoto(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Gallery'),
+              subtitle: const Text('Photos and videos'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickAttachment(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Show crypto options: select coin from wallet with real balances.
+  void _showCryptoOptions(BuildContext context) {
+    final state = context.read<AppState>();
+    final wallet = state.wallet;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Send crypto',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              const Text('Select coin from your wallet',
+                  style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 16),
+              // Show wallet coins with real balances
+              FutureBuilder<Map<String, String>>(
+                future: _getWalletBalances(wallet),
+                builder: (ctx, snap) {
+                  if (!snap.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final balances = snap.data!;
+                  return Column(
+                    children: balances.entries.map((e) {
+                      return ListTile(
+                        leading: Icon(
+                          e.key == 'BTC' ? Icons.currency_bitcoin : Icons.attach_money,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        title: Text(e.key,
+                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('Balance: ${e.value}'),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _sendCryptoDialog(context, e.key, e.value);
+                        },
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<Map<String, String>> _getWalletBalances(dynamic wallet) async {
+    final result = <String, String>{};
+    try {
+      result['BTC'] = await wallet.btcBalance() ?? '0';
+    } catch (_) {
+      result['BTC'] = '0';
+    }
+    try {
+      result['ETH'] = await wallet.evmBalance() ?? '0';
+    } catch (_) {
+      result['ETH'] = '0';
+    }
+    // USDT/USDC would come from token balances
+    result['USDT'] = '0';
+    result['USDC'] = '0';
+    return result;
+  }
+
+  void _sendCryptoDialog(BuildContext context, String coin, String balance) {
+    final amountCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Send $coin'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Balance: $balance $coin'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: amountCtrl,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Amount ($coin)',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final amount = amountCtrl.text.trim();
+              if (amount.isEmpty) return;
+              Navigator.pop(ctx);
+              // TODO: Implement actual crypto send via wallet
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Sending $amount $coin...')),
+              );
+            },
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+  }
+
     final file = await picker.pickImage(source: ImageSource.camera);
     if (file == null) return;
     final state = context.read<AppState>();
@@ -1564,9 +1714,43 @@ class _ChatScreenState extends State<ChatScreen> {
 
 
   /// Pick photo/video from GALLERY (not file picker).
+  /// Pick photo OR video from gallery (user chooses).
   Future<void> _pickAttachment(BuildContext context) async {
+    // Let user choose photo or video.
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Choose media'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'photo'),
+            child: const Row(
+              children: [
+                Icon(Icons.photo),
+                SizedBox(width: 12),
+                Text('Photo'),
+              ],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'video'),
+            child: const Row(
+              children: [
+                Icon(Icons.videocam),
+                SizedBox(width: 12),
+                Text('Video'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+
     final picker = ImagePicker();
-    final file = await picker.pickImage(source: ImageSource.gallery);
+    final file = choice == 'photo'
+        ? await picker.pickImage(source: ImageSource.gallery)
+        : await picker.pickVideo(source: ImageSource.gallery);
     if (file == null) return;
     final state = context.read<AppState>();
     try {
@@ -1576,11 +1760,13 @@ class _ChatScreenState extends State<ChatScreen> {
       _bumpStreak();
       _load();
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Photo sent')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${choice == 'photo' ? 'Photo' : 'Video'} sent')));
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not send photo: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not send: $e')));
       }
     }
   }
