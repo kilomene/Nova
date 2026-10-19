@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models.dart';
 import '../state/app_state.dart';
+import '../widgets/default_avatar.dart';
 import 'gifts.dart';
 
 /// TikTok-style comment tile with likes and expandable replies.
