@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/api_client.dart';
 import '../state/app_state.dart';
+import 'checkout_browser.dart';
 
 /// Nova Coin: buy with USD via Flutterwave, spend on gifts/tips.
 /// NOT crypto — never touches the wallet.
@@ -152,6 +153,11 @@ class _CoinsScreenState extends State<CoinsScreen> {
                   ),
                 ),
               ),
+            const SizedBox(height: 16),
+            // Custom amount
+            const Text('Custom amount', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            _CustomAmountWidget(),
             const SizedBox(height: 8),
             const Text(
               'Nova Coins are in-app only: they are not cryptocurrency and cannot be withdrawn to the crypto wallet. Purchases are processed by Flutterwave; coins credit automatically once payment confirms.',
@@ -164,7 +170,171 @@ class _CoinsScreenState extends State<CoinsScreen> {
   }
 }
 
-/// Verification badge: $25/month via the Flutterwave backend flow.
+
+/// Custom coin amount — user types coins OR dollars, the other calculates.
+class _CustomAmountWidget extends StatefulWidget {
+  @override
+  State<_CustomAmountWidget> createState() => _CustomAmountWidgetState();
+}
+
+class _CustomAmountWidgetState extends State<_CustomAmountWidget> {
+  final _coinsCtrl = TextEditingController();
+  final _usdCtrl = TextEditingController();
+  bool _editingCoins = true;
+  // Rate: 100 coins = $1 (matches package pricing: 500/$5, 1100/$10, 3000/$25)
+  static const _rate = 100.0;
+
+  @override
+  void dispose() {
+    _coinsCtrl.dispose();
+    _usdCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onCoinsChanged(String v) {
+    if (!_editingCoins) return;
+    final coins = double.tryParse(v) ?? 0;
+    final usd = coins / _rate;
+    _usdCtrl.text = usd.toStringAsFixed(2);
+  }
+
+  void _onUsdChanged(String v) {
+    if (_editingCoins) return;
+    final usd = double.tryParse(v) ?? 0;
+    final coins = (usd * _rate).round();
+    _coinsCtrl.text = '$coins';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: const Color(0xFF161616),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _coinsCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Coins',
+                      labelStyle: TextStyle(color: Colors.white54),
+                      border: OutlineInputBorder(),
+                    ),
+                    onTap: () => _editingCoins = true,
+                    onChanged: _onCoinsChanged,
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Icon(Icons.swap_horiz, color: Colors.white54),
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: _usdCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'USD (\$)',
+                      labelStyle: TextStyle(color: Colors.white54),
+                      border: OutlineInputBorder(),
+                    ),
+                    onTap: () => _editingCoins = false,
+                    onChanged: _onUsdChanged,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              onPressed: () async {
+                final coins = int.tryParse(_coinsCtrl.text) ?? 0;
+                final usd = double.tryParse(_usdCtrl.text) ?? 0;
+                if (coins <= 0 || usd <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Enter a valid amount')),
+                  );
+                  return;
+                }
+                // Show email dialog then open in-app browser
+                final emailCtrl = TextEditingController(
+                    text: context.read<AppState>().me?.email ?? '');
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Buy custom coins'),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Buy $coins Nova coins — \$${usd.toStringAsFixed(2)} USD via Flutterwave secure checkout'),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: emailCtrl,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            labelText: 'Email for receipt',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        child: const Text('Continue'),
+                      ),
+                    ],
+                  ),
+                );
+                if (ok != true || !context.mounted) return;
+                try {
+                  final state = context.read<AppState>();
+                  final url = await state.coins.buyCustom(
+                    state.api,
+                    coins: coins,
+                    usd: usd,
+                    email: emailCtrl.text.trim(),
+                  );
+                  if (!context.mounted) return;
+                  if (url != null) {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => CheckoutBrowserScreen(url: url),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Purchase failed: $e')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Continue to Payment'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Verification badge: \$25/month via the Flutterwave backend flow.
 class VerificationScreen extends StatefulWidget {
   const VerificationScreen({super.key});
 
