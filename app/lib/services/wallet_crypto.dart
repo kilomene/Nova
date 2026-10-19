@@ -31,12 +31,14 @@ class DerivedWallet {
   final String mnemonic;
   final String evmPrivateKeyHex;
   final String evmAddress; // EIP-55 checksummed
+  final String btcPrivateKeyHex; // 64-hex, m/44'/0'/0'/0/0
   final String btcAddress; // P2PKH
 
   DerivedWallet({
     required this.mnemonic,
     required this.evmPrivateKeyHex,
     required this.evmAddress,
+    required this.btcPrivateKeyHex,
     required this.btcAddress,
   });
 }
@@ -178,12 +180,14 @@ DerivedWallet deriveWallet(String mnemonic) {
 
   final ethPrivHex = _hex(ethNode.priv);
   final ethAddress = EthPrivateKey.fromHex(ethPrivHex).address.hexEip55;
+  final btcPrivHex = _hex(btcNode.priv);
   final btcAddress = _p2pkhAddress(_compressedPub(btcNode.priv));
 
   return DerivedWallet(
     mnemonic: mnemonic,
     evmPrivateKeyHex: ethPrivHex,
     evmAddress: ethAddress,
+    btcPrivateKeyHex: btcPrivHex,
     btcAddress: btcAddress,
   );
 }
