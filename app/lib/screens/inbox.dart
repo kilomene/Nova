@@ -44,6 +44,7 @@ class _InboxScreenState extends State<InboxScreen> {
   List<Map<String, dynamic>> _followers = [];
   // Activity items (likes/comments on my content).
   List<Map<String, dynamic>> _activity = [];
+  int _activityUnread = 0;
   // Latest system notification + unread count.
   Map<String, dynamic>? _latestSystem;
   int _systemUnread = 0;
@@ -94,10 +95,16 @@ class _InboxScreenState extends State<InboxScreen> {
       // Sort users by their newest story.
       final users = grouped.values.toList()
         ..sort((a, b) => b.stories.first.createdAt.compareTo(a.stories.first.createdAt));
+      // Calculate unread activity (items newer than last seen).
+      final prefs = await SharedPreferences.getInstance();
+      final lastSeen = prefs.getInt('nova_last_seen_activity') ?? 0;
+      final activityList = ((results[2]['activity'] as List?) ?? []).cast<Map<String, dynamic>>();
+      final unread = activityList.where((a) => ((a['created_at'] as num?)?.toInt() ?? 0) > lastSeen).length;
       setState(() {
         _storyUsers = users;
         _followers = ((results[1]['followers'] as List?) ?? []).cast<Map<String, dynamic>>();
-        _activity = ((results[2]['activity'] as List?) ?? []).cast<Map<String, dynamic>>();
+        _activity = activityList;
+        _activityUnread = unread;
         final notifs = ((results[3]['notifications'] as List?) ?? []).cast<Map<String, dynamic>>();
         _latestSystem = notifs.isNotEmpty ? notifs.first : null;
         _systemUnread = (results[3]['unread'] as num?)?.toInt() ?? 0;
@@ -358,16 +365,25 @@ class _InboxScreenState extends State<InboxScreen> {
       ),
       title: Text('Activity', style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 16)),
       subtitle: Text(preview, style: TextStyle(color: sub, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: _activity.isNotEmpty
+      trailing: _activityUnread > 0
           ? Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: const BoxDecoration(color: Color(0xFFFF2E63), shape: BoxShape.circle),
-              child: Text('${_activity.length}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+              child: Text('$_activityUnread', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
             )
           : null,
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const ActivityScreen()),
-      ).then((_) => _loadAll()),
+      onTap: () async {
+        // Mark as seen BEFORE opening — badge clears immediately.
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('nova_last_seen_activity', DateTime.now().millisecondsSinceEpoch);
+        if (mounted) setState(() => _activityUnread = 0);
+        if (context.mounted) {
+          await Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ActivityScreen()),
+          );
+          _loadAll();
+        }
+      },
     );
   }
 
@@ -388,9 +404,16 @@ class _InboxScreenState extends State<InboxScreen> {
       trailing: _systemUnread > 0
           ? Container(width: 10, height: 10, decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle))
           : null,
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const SystemNotificationsScreen()),
-      ).then((_) => _loadAll()),
+      onTap: () async {
+        // Clear badge immediately — don't wait for backend.
+        if (mounted) setState(() => _systemUnread = 0);
+        if (context.mounted) {
+          await Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SystemNotificationsScreen()),
+          );
+          _loadAll();
+        }
+      },
     );
   }
 
