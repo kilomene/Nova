@@ -3347,26 +3347,44 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       // ---------- uploads (R2; authed; media served via signed URLs) ----------
       if (path === '/api/uploads' && method === 'POST') {
         const uid = await guard(request, env, 30);
-        const form = await request.formData();
-        const file = form.get('file');
-        if (!(file instanceof File)) throw httpError(400, 'file_required');
-        // Debug logging for 0-byte upload investigation (sizes only — no PII).
-        console.log(`[upload] size=${file.size} type=${file.type}`);
-        if (file.size > 200 * 1024 * 1024) throw httpError(413, 'file_too_large');
-        if (file.size === 0) throw httpError(400, 'file_empty');
-        // SECURITY: only media types may be uploaded. Attacker-controlled
-        // content-types (text/html, application/javascript, svg) would be
-        // served back via /media/* and could execute as stored XSS.
-        const upCt = (file.type || '').toLowerCase();
-        if (!/^(video|image|audio)\//.test(upCt)) throw httpError(415, 'media_type_not_allowed');
-        const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin';
+        // Try raw binary upload first (X-Filename header), fall back to multipart.
+        const rawFilename = request.headers.get('X-Filename');
+        let buf: ArrayBuffer;
+        let contentType: string;
+        let ext: string;
+        if (rawFilename) {
+          // Raw binary upload: body is the file bytes directly.
+          buf = await request.arrayBuffer();
+          console.log(`[upload-raw] byteLength=${buf.byteLength} filename=${rawFilename}`);
+          if (buf.byteLength === 0) throw httpError(400, 'file_empty_buffer');
+          if (buf.byteLength > 200 * 1024 * 1024) throw httpError(413, 'file_too_large');
+          contentType = request.headers.get('Content-Type') || 'application/octet-stream';
+          const ctLow = contentType.toLowerCase();
+          if (!/^(video|image|audio)\//.test(ctLow)) throw httpError(415, 'media_type_not_allowed');
+          ext = (rawFilename.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin';
+        } else {
+          const form = await request.formData();
+          const file = form.get('file');
+          if (!(file instanceof File)) throw httpError(400, 'file_required');
+          // Debug logging for 0-byte upload investigation (sizes only — no PII).
+          console.log(`[upload] size=${file.size} type=${file.type}`);
+          if (file.size > 200 * 1024 * 1024) throw httpError(413, 'file_too_large');
+          if (file.size === 0) throw httpError(400, 'file_empty');
+          // SECURITY: only media types may be uploaded. Attacker-controlled
+          // content-types (text/html, application/javascript, svg) would be
+          // served back via /media/* and could execute as stored XSS.
+          const upCt = (file.type || '').toLowerCase();
+          if (!/^(video|image|audio)\//.test(upCt)) throw httpError(415, 'media_type_not_allowed');
+          ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin';
+          // Read the full buffer first to verify content before R2 put
+          buf = await file.arrayBuffer();
+          console.log(`[upload] buffer byteLength=${buf.byteLength}`);
+          if (buf.byteLength === 0) throw httpError(400, 'file_empty_buffer');
+          contentType = file.type || 'application/octet-stream';
+        }
         const key = `${uid}/${newId()}.${ext}`;
-        // Read the full buffer first to verify content before R2 put
-        const buf = await file.arrayBuffer();
-        console.log(`[upload] buffer byteLength=${buf.byteLength}`);
-        if (buf.byteLength === 0) throw httpError(400, 'file_empty_buffer');
         await env.MEDIA.put(key, buf, {
-          httpMetadata: { contentType: file.type || 'application/octet-stream' },
+          httpMetadata: { contentType },
         });
         return json({ key, playbackUrl: await signMediaKey(env.MEDIA_SIGNING_SECRET, key) }, 201);
       }
@@ -3389,7 +3407,9 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         if (file.size === 0) throw httpError(400, 'file_empty');
         const rel = `${uid}/${newId()}.${ext}`;
         const key = `avatars/${rel}`;
-        await env.MEDIA.put(key, file.stream(), {
+        const avatarBuf = await file.arrayBuffer();
+        if (avatarBuf.byteLength === 0) throw httpError(400, 'file_empty_buffer');
+        await env.MEDIA.put(key, avatarBuf, {
           httpMetadata: { contentType: ct, cacheControl: 'public, max-age=31536000' },
         });
         const t = now();
