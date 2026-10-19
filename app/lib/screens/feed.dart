@@ -310,28 +310,59 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
             bottom: 90,
             child: Column(
               children: [
-                GestureDetector(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => ProfileScreen(uid: v.uid, handle: v.handle)),
-                  ),
-                  child: CircleAvatar(
-                    radius: 24,
-                    backgroundColor: Colors.white24,
-                    backgroundImage: v.avatarUrl.isNotEmpty ? NetworkImage(v.avatarUrl) : null,
-                    child: v.avatarUrl.isEmpty ? Text(v.handle.isNotEmpty ? v.handle[0].toUpperCase() : '?') : null,
-                  ),
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => ProfileScreen(uid: v.uid, handle: v.handle)),
+                      ),
+                      child: CircleAvatar(
+                        radius: 24,
+                        backgroundColor: Colors.white24,
+                        backgroundImage: v.avatarUrl.isNotEmpty ? NetworkImage(v.avatarUrl) : null,
+                        child: v.avatarUrl.isEmpty ? Text(v.handle.isNotEmpty ? v.handle[0].toUpperCase() : '?') : null,
+                      ),
+                    ),
+                    // Follow "+" button (TikTok-style) — disappears after following.
+                    if (!v.isFollowing && v.uid != state.me?.uid)
+                      Positioned(
+                        bottom: -8,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: GestureDetector(
+                            onTap: () async {
+                              try {
+                                await state.api.post('/api/users/${v.uid}/follow', {});
+                                if (context.mounted) setState(() => v.isFollowing = true);
+                              } catch (_) {}
+                            },
+                            child: Container(
+                              width: 22,
+                              height: 22,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFFE2C55),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.add, size: 16, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 14),
                 _RailButton(
                   iconWidget: NovaIcon.heart(
                       active: v.likedByMe,
-                      size: 36,
+                      size: 44,
                       color: v.likedByMe ? Colors.redAccent : Colors.white),
                   label: _fmt(v.likeCount),
                   onTap: () => state.toggleLike(v),
                 ),
                 _RailButton(
-                  iconWidget: const NovaIcon.comment(size: 36),
+                  iconWidget: const NovaIcon.comment(size: 44),
                   label: _fmt(v.commentCount),
                   onTap: () => showModalBottomSheet(
                     context: context,
@@ -342,6 +373,7 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
                 ),
                 _RailButton(
                   icon: _saved ? Icons.bookmark : Icons.bookmark_border,
+                  iconSize: 44,
                   color: _saved ? Theme.of(context).colorScheme.primary : Colors.white,
                   label: 'Save',
                   onTap: () async {
@@ -365,7 +397,7 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
                   },
                 ),
                 _RailButton(
-                  iconWidget: NovaIcon.share(size: 36),
+                  icon: Icons.reply, iconSize: 44,
                   label: _fmt(v.shareCount),
                   onTap: () => showModalBottomSheet(
                     context: context,
@@ -498,12 +530,14 @@ class _RailButton extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final Color color;
+  final double iconSize;
   const _RailButton(
       {this.icon,
       this.iconWidget,
       required this.label,
       required this.onTap,
-      this.color = Colors.white});
+      this.color = Colors.white,
+      this.iconSize = 30});
 
   @override
   Widget build(BuildContext context) {
@@ -513,7 +547,7 @@ class _RailButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Column(
           children: [
-            iconWidget ?? Icon(icon, color: color, size: 30),
+            iconWidget ?? Icon(icon, color: color, size: iconSize),
             const SizedBox(height: 2),
             Text(label,
                 style: const TextStyle(
