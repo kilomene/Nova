@@ -73,7 +73,25 @@ class _ProfileScreenState extends State<ProfileScreen>
     final state = context.read<AppState>();
     try {
       if (widget.self) {
-        _user = state.me;
+        // Fetch fresh user data — cached state.me can have stale verificationType.
+        try {
+          final myUid = state.me?.uid ?? '';
+          if (myUid.isNotEmpty) {
+            final r = await state.api.get('/api/users/$myUid');
+            // Backend returns user fields at top level (not under 'user').
+            if (r.containsKey('uid')) {
+              _user = NovaUser.fromJson(r.cast<String, dynamic>());
+              // Update the cached me as well.
+              state.me = _user;
+            } else {
+              _user = state.me;
+            }
+          } else {
+            _user = state.me;
+          }
+        } catch (_) {
+          _user = state.me;
+        }
         _followers = state.myFollowerCount;
         // Reposts + Saved tabs pull the viewer's own lists from the backend.
         try {
