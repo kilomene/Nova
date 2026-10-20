@@ -1120,8 +1120,40 @@ async function verifyMediaSig(secret: string | undefined, key: string, exp: stri
   return diff === 0;
 }
 
+// CORS for the Nova web app origins (browser calls from the web app to
+// this API are cross-origin when the app is served from its subdomain).
+const CORS_ORIGINS = new Set([
+  'https://app.novamail.store',
+  'https://user.novamail.store',
+  'https://nova-api.ayiijumo.workers.dev',
+]);
+
+function corsHeaders(origin: string): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Filename',
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin',
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const origin = request.headers.get('Origin') || '';
+    const corsOk = CORS_ORIGINS.has(origin);
+    if (request.method === 'OPTIONS' && corsOk) {
+      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+    }
+    const resp = await this._handle(request, env);
+    // WebSocket upgrades must not be cloned (would drop the socket).
+    if (!corsOk || request.headers.get('Upgrade') === 'websocket') return resp;
+    const out = new Response(resp.body, resp);
+    for (const [k, v] of Object.entries(corsHeaders(origin))) out.headers.set(k, v);
+    return out;
+  },
+
+  async _handle(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
@@ -1452,6 +1484,12 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       }
 
       // ---------- Nova web app (Flutter web build in R2 under webapp/) ----------
+      if (method === 'GET' && (request.headers.get('host') || '').split(':')[0].toLowerCase() === 'app.novamail.store' && path === '/') {
+        const idx = await env.MEDIA.get('webapp/index.html');
+        if (idx) {
+          return new Response(idx.body, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
+        }
+      }
       if ((path === '/app' || path.startsWith('/app/')) && method === 'GET') {
         const rel = path === '/app' ? 'index.html' : path.slice('/app/'.length);
         const ctFor = (p: string): string => {
