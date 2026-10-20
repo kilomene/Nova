@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,6 +9,7 @@ import '../state/app_state.dart';
 import 'orders.dart';
 import 'cart_screen.dart';
 import 'seller.dart';
+import '../utils/io_compat.dart';
 
 /// Marketplace: listings, product detail, create listing.
 /// Storefronts live inside profiles (see profile.dart Store tab).
@@ -638,7 +638,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(10),
                             image: DecorationImage(
-                              image: FileImage(File(_imagePaths[i])),
+                              image: pathImage(_imagePaths[i]),
                               fit: BoxFit.cover,
                             ),
                           ),
