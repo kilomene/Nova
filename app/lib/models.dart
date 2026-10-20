@@ -2,6 +2,18 @@
 // toJson is used for the local demo store.
 import 'dart:convert';
 
+import 'config.dart';
+
+/// The API returns media as server-relative signed paths (/media/...).
+/// Resolve them against the API origin so video_player and Image.network
+/// always receive absolute URLs — a relative path was previously treated
+/// as a local file by the player and failed with 'Video unavailable'.
+String resolveMediaUrl(String raw) {
+  if (raw.isEmpty || raw.startsWith('http')) return raw;
+  if (raw.startsWith('/')) return '${AppConfig.apiBaseUrl}$raw';
+  return raw;
+}
+
 /// X-style company affiliation: the company (gold badge) this user is
 /// affiliated with. Rendered as a small company-logo square next to the
 /// user's verification badge.
@@ -201,7 +213,7 @@ class NovaVideo {
       avatarUrl: '${j['avatar_url'] ?? ''}',
       caption: '${j['caption'] ?? ''}',
       hashtags: hs,
-      mediaUrl: '${j['media_url'] ?? j['mediaUrl'] ?? ''}',
+      mediaUrl: resolveMediaUrl('${j['media_url'] ?? j['mediaUrl'] ?? ''}'),
       soundLabel: '${j['sound_label'] ?? j['soundLabel'] ?? ''}',
       audioKey: '${j['audio_key'] ?? j['audioKey'] ?? ''}',
       likeCount: (j['like_count'] ?? j['likeCount'] ?? 0) as int,
@@ -262,7 +274,6 @@ class VideoComment {
         affiliatedWith: parseAffiliation(j['affiliated_with'] ?? j['affiliatedWith']),
         likeCount: (j['like_count'] ?? 0) as int,
         likedByMe: (j['liked_by_me'] ?? false) == true,
-        isFollowing: (j['is_following'] ?? false) == true,
         replyCount: (j['reply_count'] ?? 0) as int,
       );
 }
@@ -445,7 +456,7 @@ class ChatMessage {
         text: '${j['text'] ?? ''}',
         createdAt: (j['created_at'] ?? j['createdAt'] ?? 0) as int,
         mediaKey: '${j['media_key'] ?? j['mediaKey'] ?? ''}',
-        mediaUrl: '${j['media_url'] ?? j['mediaUrl'] ?? ''}',
+        mediaUrl: resolveMediaUrl('${j['media_url'] ?? j['mediaUrl'] ?? ''}'),
         durationS: (j['duration_s'] ?? j['durationS'] ?? 0) as int,
       );
 }
