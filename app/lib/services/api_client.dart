@@ -1,8 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import '../utils/io_compat.dart';
 
 class ApiException implements Exception {
   final int status;
@@ -112,8 +112,7 @@ class ApiClient {
     final uri = Uri.parse('$baseUrl$path');
     // Raw binary upload (bypasses Workers formData 0-byte bug).
     // Backend reads X-Filename header and raw body bytes.
-    final file = File(filePath);
-    final bytes = await file.readAsBytes();
+    final bytes = await readPathBytes(filePath);
     if (bytes.isEmpty) throw ApiException(400, 'local_file_empty');
     final filename = filePath.split('/').last;
     final ct = _guessContentType(filePath);
