@@ -1236,6 +1236,7 @@ a{color:#D4AF37;font-size:18px;text-decoration:none}
           host.endsWith('.novamail.store') &&
           host !== 'user.novamail.store' &&
           host !== 'domains.novamail.store' &&
+          host !== 'app.novamail.store' &&
           host !== 'novamail.store' &&
           path === '/' && method === 'GET'
         ) {
@@ -1484,7 +1485,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
       }
 
       // ---------- Nova web app (Flutter web build in R2 under webapp/) ----------
-      if (method === 'GET' && (request.headers.get('host') || '').split(':')[0].toLowerCase() === 'app.novamail.store' && path === '/') {
+      if (method === 'GET' && url.hostname.toLowerCase() === 'app.novamail.store' && path === '/') {
         const idx = await env.MEDIA.get('webapp/index.html');
         if (idx) {
           return new Response(idx.body, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
