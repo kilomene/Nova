@@ -515,7 +515,7 @@ class _StoryItem {
     id: '${j['id'] ?? ''}',
     mediaKey: '${j['media_key'] ?? ''}',
     mediaType: '${j['media_type'] ?? 'photo'}',
-    mediaUrl: '${j['media_url'] ?? ''}',
+    mediaUrl: resolveMediaUrl('${j['media_url'] ?? ''}'),
     createdAt: (j['created_at'] as num?)?.toInt() ?? 0,
     viewed: ((j['viewed'] as num?)?.toInt() ?? 0) > 0,
   );
