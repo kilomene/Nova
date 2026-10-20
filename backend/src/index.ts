@@ -949,6 +949,15 @@ async function applySuspension(env: Env, uid: string, reason: string): Promise<v
 }
 
 async function isVerified(db: D1Database, uid: string): Promise<boolean> {
+  // Fast path: users.verification_type (expires_at = 0 means never expires,
+  // e.g. the owner/CEO and official company accounts which are permanently verified).
+  try {
+    const u = await db
+      .prepare("SELECT 1 FROM users WHERE uid = ? AND verification_type IS NOT NULL AND verification_type != '' AND (verification_expires_at = 0 OR verification_expires_at > ?)")
+      .bind(uid, now())
+      .first();
+    if (u) return true;
+  } catch { /* column may not exist yet */ }
   const r = await db
     .prepare("SELECT 1 FROM verification_subscriptions WHERE uid = ? AND status = 'active' AND expires_at > ?")
     .bind(uid, now())
@@ -1447,8 +1456,22 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         const vm = path.match(/^\/v\/([A-Za-z0-9_-]+)$/);
         if (vm && method === 'GET') {
           const vid = vm[1];
-          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nova Video</title><style>body{background:#000;color:#fff;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0}img{width:120px;height:120px;border-radius:24px}a{background:#fff;color:#000;padding:14px 32px;border-radius:12px;text-decoration:none;font-weight:700;margin-top:24px}</style></head><body><img src="/avatars/nova-logo.png" alt="Nova"><h2>Watch on Nova</h2><p>Video ${vid}</p><a href="nova://v/${vid}">Open in Nova App</a></body></html>`;
-          return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+          const vrow = await env.DB.prepare(
+            `SELECT v.caption, v.media_key, v.visibility, u.handle, u.display_name FROM videos v JOIN users u ON u.uid = v.uid WHERE v.id = ?`,
+          ).bind(vid).first<{ caption: string; media_key: string; visibility: string; handle: string; display_name: string }>();
+          if (!vrow || vrow.visibility !== 'public') {
+            const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nova Video</title><style>body{background:#000;color:#fff;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0}img{width:120px;height:120px;border-radius:24px}a{background:#fff;color:#000;padding:14px 32px;border-radius:12px;text-decoration:none;font-weight:700;margin-top:24px}</style></head><body><img src="/avatars/nova-logo.png" alt="Nova"><h2>Video unavailable</h2><p>This video is not available.</p><a href="nova://">Open Nova</a></body></html>`;
+            return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' }, status: 404 });
+          }
+          const signed = await signMediaKey(env.MEDIA_SIGNING_SECRET, vrow.media_key, 60 * 60 * 1000).catch(() => '');
+          const captionEsc = escHtml(vrow.caption || '');
+          const nameEsc = escHtml(vrow.display_name || 'Nova');
+          const handleEsc = escHtml(vrow.handle || '');
+          const videoTag = signed
+            ? `<video src="${signed}" controls autoplay muted loop playsinline style="width:min(92vw,420px);aspect-ratio:9/16;background:#111;border-radius:16px"></video>`
+            : '';
+          const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${nameEsc} on Nova</title><meta property="og:title" content="${nameEsc} on Nova"><meta property="og:description" content="${captionEsc}"><meta property="og:type" content="video.other">${signed ? `<meta property="og:video" content="${signed}">` : ''}<style>body{background:#000;color:#fff;font-family:system-ui;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px;box-sizing:border-box}img.logo{width:72px;height:72px;border-radius:18px}a{background:#fff;color:#000;padding:14px 32px;border-radius:12px;text-decoration:none;font-weight:700;margin-top:24px}p.cap{max-width:420px;text-align:center;color:#ddd;margin-top:16px}.who{color:#D4AF37;font-weight:700;margin-top:16px}</style></head><body><img class="logo" src="/avatars/nova-logo.png" alt="Nova">${videoTag}<div class="who">${nameEsc} <span style="color:#888">@${handleEsc}</span></div><p class="cap">${captionEsc}</p><a href="nova://v/${vid}">Open in Nova App</a></body></html>`;
+          return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
         }
         const um = path.match(/^\/@([A-Za-z0-9_.-]+)$/) || path.match(/^\/([A-Za-z0-9_.-]+)$/);
         if (um && method === 'GET') {
@@ -2557,7 +2580,10 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
                AND EXISTS (SELECT 1 FROM follows f1 WHERE f1.follower_uid = ? AND f1.followee_uid = v.uid)
                AND EXISTS (SELECT 1 FROM follows f2 WHERE f2.follower_uid = v.uid AND f2.followee_uid = ?))
            OR (v.visibility = 'private' AND v.uid = ?))`;
-        const binds: unknown[] = [cursor, uid, uid, uid, cursor, uid, uid];
+        // Bind values MUST follow the SQL placeholder text order exactly:
+        // score age (cursor) -> boost tags -> promotions (now) -> is_following (uid)
+        // -> privacy (uid x3) -> created_at < (cursor) -> block filter (uid x2) -> limit.
+        const binds: unknown[] = [cursor];
         if (boostTags.length > 0) {
           const ph = boostTags.map(() => '?').join(',');
           scoreExpr += ` + (SELECT COUNT(*) FROM json_each(v.hashtags) j WHERE j.value IN (${ph})) * 5`;
@@ -2568,6 +2594,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         // Active promotions get real ranking amplification (labeled "Promoted").
         scoreExpr += ` + (SELECT COUNT(*) FROM promotions p WHERE p.video_id = v.id AND p.status = 'active' AND p.ends_at > ?) * 25`;
         binds.push(now());
+        binds.push(uid, uid, uid, uid, cursor, uid, uid);
         binds.push(limit);
         const rows = await env.DB.prepare(
           `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.verification_type, ${scoreExpr} AS score,
@@ -2577,7 +2604,7 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
              AND ${BLOCK_FILTER}
            ORDER BY score DESC, v.created_at DESC LIMIT ?`,
         )
-          .bind(uid, ...binds)
+          .bind(...binds)
           .all();
         const out = [];
         for (const r of rows.results as Record<string, unknown>[]) {
