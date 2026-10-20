@@ -33,7 +33,16 @@ class AuthService extends ChangeNotifier {
   Future<void> init() async {
     try {
       await Firebase.initializeApp(
-        options: const FirebaseOptions(
+        options: kIsWeb
+            ? const FirebaseOptions(
+                apiKey: 'AIzaSyCeDmvjUdZqzQoXY1aMMjLEHNARfJ-tpvQ',
+                appId: '1:571086184276:web:ba3859ed58db042444f2c1',
+                messagingSenderId: '571086184276',
+                projectId: 'nova-dc139',
+                storageBucket: 'nova-dc139.firebasestorage.app',
+                authDomain: 'nova-dc139.firebaseapp.com',
+              )
+            : const FirebaseOptions(
           apiKey: 'AIzaSyCt0aYGuQPmVrRGT-_jGSmCAXCqn092GkE',
           appId: '1:571086184276:android:5daa09a87000154b44f2c1',
           messagingSenderId: '571086184276',
