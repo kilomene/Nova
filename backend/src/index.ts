@@ -1451,6 +1451,40 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
       }
 
+      // ---------- Nova web app (Flutter web build in R2 under webapp/) ----------
+      if ((path === '/app' || path.startsWith('/app/')) && method === 'GET') {
+        const rel = path === '/app' ? 'index.html' : path.slice('/app/'.length);
+        const ctFor = (p: string): string => {
+          if (p.endsWith('.html')) return 'text/html; charset=utf-8';
+          if (p.endsWith('.js')) return 'application/javascript';
+          if (p.endsWith('.json')) return 'application/json';
+          if (p.endsWith('.wasm')) return 'application/wasm';
+          if (p.endsWith('.css')) return 'text/css';
+          if (p.endsWith('.png')) return 'image/png';
+          if (p.endsWith('.jpg') || p.endsWith('.jpeg')) return 'image/jpeg';
+          if (p.endsWith('.svg')) return 'image/svg+xml';
+          if (p.endsWith('.ico')) return 'image/x-icon';
+          if (p.endsWith('.ttf')) return 'font/ttf';
+          if (p.endsWith('.otf')) return 'font/otf';
+          if (p.endsWith('.woff2')) return 'font/woff2';
+          if (p.endsWith('.woff')) return 'font/woff';
+          return 'application/octet-stream';
+        };
+        const obj = await env.MEDIA.get('webapp/' + rel);
+        if (obj) {
+          const headers = new Headers();
+          headers.set('content-type', ctFor(rel));
+          headers.set('cache-control', rel === 'index.html' || rel === 'flutter_service_worker.js' ? 'no-store' : 'public, max-age=86400');
+          return new Response(obj.body, { headers });
+        }
+        // SPA fallback: unknown /app/* paths load the app shell.
+        const idx = await env.MEDIA.get('webapp/index.html');
+        if (idx) {
+          return new Response(idx.body, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
+        }
+        return new Response('web app not deployed yet', { status: 404 });
+      }
+
       // ---------- share links (public, no auth) ----------
       {
         const vm = path.match(/^\/v\/([A-Za-z0-9_-]+)$/);
