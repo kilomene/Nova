@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -16,6 +15,7 @@ import '../services/kyc_service.dart';
 import '../services/push_service.dart';
 import '../services/sync_service.dart';
 import '../services/wallet_service.dart';
+import '../utils/io_compat.dart';
 
 /// Central app state. Talks to the Workers API when configured, otherwise
 /// runs a labeled local demo store (seeded feed, local ledger).
@@ -157,9 +157,9 @@ class AppState extends ChangeNotifier {
   /// blacklist + IP reputation are enforced by the backend.
   Future<void> checkVpnInterface() async {
     try {
-      final ifs = await NetworkInterface.list();
-      vpnDetected = ifs.any((i) {
-        final n = i.name.toLowerCase();
+      final names = await networkInterfaceNames();
+      vpnDetected = names.any((raw) {
+        final n = raw.toLowerCase();
         return n.contains('tun') || n.contains('ppp') || n.contains('pptp') || n.contains('ipsec') || n.contains('tap');
       });
     } catch (_) {
@@ -510,20 +510,8 @@ class AppState extends ChangeNotifier {
   Future<void> downloadVideo(NovaVideo v) async {
     final url = v.mediaUrl;
     if (url.isEmpty) throw Exception('No media URL');
-    final client = HttpClient();
-    try {
-      final req = await client.getUrl(Uri.parse(url));
-      final resp = await req.close();
-      if (resp.statusCode != 200) throw Exception('HTTP ${resp.statusCode}');
-      final dir = Directory.systemTemp;
-      final ext = url.contains('.mp4') ? 'mp4' : 'bin';
-      final file = File('${dir.path}/nova_${v.id}.$ext');
-      final sink = file.openWrite();
-      await resp.pipe(sink);
-      await sink.close();
-    } finally {
-      client.close();
-    }
+    final ext = url.contains('.mp4') ? 'mp4' : 'bin';
+    await saveUrlToTemp(url, 'nova_${v.id}.$ext');
   }
 
   Future<List<VideoComment>> fetchComments(String videoId) async {
