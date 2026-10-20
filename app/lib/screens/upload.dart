@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -21,6 +20,7 @@ import '../widgets/ai_badge.dart';
 import '../widgets/nova_filters.dart';
 import 'hashtag.dart';
 import 'live.dart';
+import '../utils/io_compat.dart';
 
 /// Maximum gallery video length: 2:00 (user spec).
 const _maxGalleryVideoSecs = 120;
@@ -596,7 +596,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
         final v = await picker.pickVideo(source: ImageSource.gallery);
         if (v == null || !mounted) return;
         // Enforce the 2:00 maximum on the real file duration.
-        final probe = VideoPlayerController.file(File(v.path));
+        final probe = fileVideoController(v.path);
         await probe.initialize();
         final secs = probe.value.duration.inSeconds;
         await probe.dispose();
@@ -1225,14 +1225,13 @@ class _TextPostScreenState extends State<TextPostScreen> {
       final bytes =
           await img.toByteData(format: ui.ImageByteFormat.png);
       if (bytes == null) throw StateError('render failed');
-      final dir = Directory.systemTemp;
-      final f = File(
-          '${dir.path}/nova_text_${DateTime.now().millisecondsSinceEpoch}.png');
-      await f.writeAsBytes(bytes.buffer.asUint8List());
+      final fPath = await writeTempBytes(
+          'nova_text_${DateTime.now().millisecondsSinceEpoch}.png',
+          bytes.buffer.asUint8List());
       if (!mounted) return;
       Navigator.of(context).pushReplacement(MaterialPageRoute(
         builder: (_) => PostEditorScreen(
-          filePath: f.path,
+          filePath: fPath,
           isVideo: false,
           filter: widget.filter,
           retouchOn: false,
@@ -1449,7 +1448,7 @@ class DraftStore {
       // Drop drafts whose media file no longer exists.
       final alive = <PostDraft>[];
       for (final d in drafts) {
-        if (await File(d.filePath).exists()) alive.add(d);
+        if (await pathExists(d.filePath)) alive.add(d);
       }
       if (alive.length != drafts.length) await save(alive);
       alive.sort((a, b) => b.savedAt.compareTo(a.savedAt));
@@ -1577,7 +1576,7 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
       _tagProducts = widget.initialTagProducts!;
     }
     if (widget.isVideo) {
-      _preview = VideoPlayerController.file(File(widget.filePath));
+      _preview = fileVideoController(widget.filePath);
       _preview!.initialize().then((_) {
         if (!mounted) return;
         setState(() {
@@ -1707,12 +1706,11 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
     if (!widget.isVideo || _coverBytes == null || _coverBytes!.isEmpty) {
       return '';
     }
-    final dir = Directory.systemTemp;
-    final f = File(
-        '${dir.path}/nova_cover_${DateTime.now().millisecondsSinceEpoch}.jpg');
-    await f.writeAsBytes(_coverBytes!);
+    final coverPath = await writeTempBytes(
+        'nova_cover_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        _coverBytes!);
     final state = context.read<AppState>();
-    final up = await state.api.upload('/api/uploads', f.path);
+    final up = await state.api.upload('/api/uploads', coverPath);
     return '${up['key'] ?? ''}';
   }
 
@@ -1960,7 +1958,7 @@ class _PostEditorScreenState extends State<PostEditorScreen> {
               child: Center(
                   child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary)));
     } else {
-      media = Image.file(File(widget.filePath),
+      media = Image(image: pathImage(widget.filePath),
           height: 320, width: double.infinity, fit: BoxFit.cover);
     }
     return Stack(
@@ -2381,7 +2379,7 @@ class _DraftsScreenState extends State<DraftsScreen> {
                                       ? const Icon(
                                           Icons.videocam_outlined,
                                           color: Colors.white54)
-                                      : Image.file(File(d.filePath),
+                                      : Image(image: pathImage(d.filePath),
                                           fit: BoxFit.cover,
                                           errorBuilder: (_, __,
                                                   ___) =>
