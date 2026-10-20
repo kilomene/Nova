@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -70,17 +71,21 @@ class _LiveListScreenState extends State<LiveListScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(backgroundColor: Colors.black, title: const Text('LIVE')),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: Colors.redAccent,
-        icon: const Icon(Icons.videocam),
-        label: const Text('Go LIVE'),
-        onPressed: _goLive,
-      ),
+      // Web has no live-stream creation (mobile + Nova Studio only);
+      // the session list below remains for watching.
+      floatingActionButton: kIsWeb
+          ? null
+          : FloatingActionButton.extended(
+              backgroundColor: Colors.redAccent,
+              icon: const Icon(Icons.videocam),
+              label: const Text('Go LIVE'),
+              onPressed: _goLive,
+            ),
       body: state.liveSessions.isEmpty
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
-                child: Text('Nobody is live right now.\nReach 1,000 followers to start your own stream.',
+                child: Text(kIsWeb ? 'Nobody is live right now.' : 'Nobody is live right now.\nReach 1,000 followers to start your own stream.',
                     textAlign: TextAlign.center, style: TextStyle(color: Colors.white38)),
               ),
             )
