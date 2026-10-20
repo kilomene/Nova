@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,6 +21,7 @@ import 'profile.dart';
 import 'promote.dart';
 import 'report.dart';
 import 'shell.dart';
+import '../utils/io_compat.dart';
 
 /// TikTok-style vertical feed: Following | For You tabs, full-screen
 /// swipeable videos, right action rail, double-tap to like.
@@ -212,7 +212,7 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
   Future<void> _init() async {
     try {
       final url = widget.video.mediaUrl;
-      _c = url.startsWith('http') ? VideoPlayerController.networkUrl(Uri.parse(url)) : VideoPlayerController.file(File(url));
+      _c = url.startsWith('http') ? VideoPlayerController.networkUrl(Uri.parse(url)) : fileVideoController(url);
       await _c!.initialize();
       _c!.setLooping(true);
       if (widget.currentIndex.value == widget.index && mounted) _c!.play();
