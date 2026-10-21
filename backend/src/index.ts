@@ -1345,7 +1345,7 @@ input:focus{outline:none;border-color:var(--gold)}
 .ad-slot .ad-label{font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
 </style>
 
-<!-- GOOGLE ADSENSE SETUP: replace ca-pub-2431202994591245 with your real AdSense publisher ID, and replace every data-ad-slot="XXXXXXXXXX" below with your real ad unit IDs. -->
+<!-- Google AdSense: publisher ca-pub-2431202994591245, ad unit "Nova Coins Page" (created 2026-10-21). -->
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2431202994591245" crossorigin="anonymous"></script>
 </head>
 <body>
@@ -1375,7 +1375,7 @@ input:focus{outline:none;border-color:var(--gold)}
 <ins class="adsbygoogle"
      style="display:block"
      data-ad-client="ca-pub-2431202994591245"
-     data-ad-slot="XXXXXXXXXX"
+     data-ad-slot="6164427903"
      data-ad-format="auto"
      data-full-width-responsive="true"></ins>
 <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
