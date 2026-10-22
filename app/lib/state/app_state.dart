@@ -477,9 +477,18 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> recordView(NovaVideo v) async {
-    if (isDemo) return;
+    if (isDemo || v.isAd) return;
     try {
       await api.post('/api/videos/${v.id}/view');
+    } catch (_) {}
+  }
+
+  /// Log an in-feed ad impression or CTA click. The server ignores
+  /// events from the advertiser themselves.
+  Future<void> logAdEvent(NovaVideo v, String kind) async {
+    if (isDemo || !v.isAd || v.adId.isEmpty) return;
+    try {
+      await api.post('/api/ads/${v.adId}/$kind', {});
     } catch (_) {}
   }
 
