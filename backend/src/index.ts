@@ -251,30 +251,6 @@ async function ensureAffiliationsTable(db: D1Database): Promise<void> {
   affiliationsEnsured = true;
 }
 
-// In-feed video ads (TikTok-style): a campaign promotes one of the
-// advertiser's own public videos; the feed blender inserts it as a
-// sponsored item with a CTA. Impressions/clicks are counters on the row.
-let adTablesEnsured = false;
-async function ensureAdTables(db: D1Database): Promise<void> {
-  if (adTablesEnsured) return;
-  await db.batch([
-    db.prepare(`CREATE TABLE IF NOT EXISTS ad_campaigns (
-      id TEXT PRIMARY KEY,
-      advertiser_uid TEXT NOT NULL,
-      video_id TEXT NOT NULL,
-      cta_label TEXT NOT NULL,
-      cta_url TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'active',
-      impressions INTEGER NOT NULL DEFAULT 0,
-      clicks INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL
-    )`),
-    db.prepare('CREATE INDEX IF NOT EXISTS idx_ad_campaigns_status ON ad_campaigns(status, impressions)'),
-    db.prepare('CREATE INDEX IF NOT EXISTS idx_ad_campaigns_advertiser ON ad_campaigns(advertiser_uid)'),
-  ]);
-  adTablesEnsured = true;
-}
-
 // coin_purchases maps each Flutterwave tx_ref to its buyer + package so the
 // webhook/callback settler never has to parse underscores out of tx_refs
 // (package ids like "coins_500" contain them). Same deploy-safety pattern.
@@ -2759,102 +2735,6 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         ).all();
         return json({ sounds: rows.results });
       }
-      // ---------- in-feed video ads ----------
-      if (path === '/api/ads' && method === 'POST') {
-        const uid = await guard(request, env);
-        await ensureAdTables(env.DB);
-        const b = await readJson<{ video_id?: string; cta_label?: string; cta_url?: string }>(request);
-        const videoId = vStr(b.video_id, 'video_id', 1, 64);
-        const ctaLabel = vStr(b.cta_label, 'cta_label', 1, 24);
-        const ctaUrl = vStr(b.cta_url, 'cta_url', 4, 500);
-        if (!/^https?:\/\//i.test(ctaUrl)) throw httpError(400, 'cta_url_must_be_http');
-        const video = await env.DB.prepare('SELECT id, uid, visibility FROM videos WHERE id = ?')
-          .bind(videoId)
-          .first<{ id: string; uid: string; visibility: string }>();
-        if (!video) throw httpError(404, 'video_not_found');
-        if (video.uid !== uid) throw httpError(403, 'not_your_video');
-        if (video.visibility !== 'public') throw httpError(400, 'video_must_be_public');
-        const activeCount = await env.DB.prepare("SELECT COUNT(*) AS n FROM ad_campaigns WHERE advertiser_uid = ? AND status = 'active'")
-          .bind(uid)
-          .first<{ n: number }>();
-        if ((activeCount?.n ?? 0) >= 5) throw httpError(400, 'too_many_active_ads');
-        const id = 'ad_' + newId();
-        await env.DB.prepare(
-          "INSERT INTO ad_campaigns (id, advertiser_uid, video_id, cta_label, cta_url, status, impressions, clicks, created_at) VALUES (?, ?, ?, ?, ?, 'active', 0, 0, ?)",
-        )
-          .bind(id, uid, videoId, ctaLabel, ctaUrl, now())
-          .run();
-        return json({ id, status: 'active' });
-      }
-      if (path === '/api/ads/mine' && method === 'GET') {
-        const uid = await guard(request, env);
-        await ensureAdTables(env.DB);
-        const rows = await env.DB.prepare(
-          'SELECT c.*, v.caption AS video_caption, v.media_key AS video_media_key FROM ad_campaigns c JOIN videos v ON v.id = c.video_id WHERE c.advertiser_uid = ? ORDER BY c.created_at DESC',
-        )
-          .bind(uid)
-          .all();
-        const out = [];
-        for (const r of rows.results as Record<string, unknown>[]) {
-          out.push({ ...r, video_media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.video_media_key as string).catch(() => '') });
-        }
-        return json({ ads: out });
-      }
-      if (path === '/api/ads/my-videos' && method === 'GET') {
-        const uid = await guard(request, env);
-        const rows = await env.DB.prepare(
-          "SELECT id, caption, media_key, created_at, like_count FROM videos WHERE uid = ? AND visibility = 'public' ORDER BY created_at DESC LIMIT 100",
-        )
-          .bind(uid)
-          .all();
-        const out = [];
-        for (const r of rows.results as Record<string, unknown>[]) {
-          out.push({ ...r, media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string).catch(() => '') });
-        }
-        return json({ videos: out });
-      }
-      {
-        const adm = path.match(/^\/api\/ads\/([^/]+)\/(impression|click)$/);
-        if (adm && method === 'POST') {
-          const uid = await guard(request, env);
-          await ensureAdTables(env.DB);
-          const camp = await env.DB.prepare('SELECT id, advertiser_uid FROM ad_campaigns WHERE id = ?')
-            .bind(adm[1])
-            .first<{ id: string; advertiser_uid: string }>();
-          if (!camp) throw httpError(404, 'ad_not_found');
-          // Advertisers never inflate their own stats.
-          if (camp.advertiser_uid !== uid) {
-            const col = adm[2] === 'click' ? 'clicks' : 'impressions';
-            await env.DB.prepare(`UPDATE ad_campaigns SET ${col} = ${col} + 1 WHERE id = ?`).bind(adm[1]).run();
-          }
-          return json({ ok: true });
-        }
-        const adp = path.match(/^\/api\/ads\/([^/]+)\/(pause|resume)$/);
-        if (adp && method === 'POST') {
-          const uid = await guard(request, env);
-          await ensureAdTables(env.DB);
-          const camp = await env.DB.prepare('SELECT id, advertiser_uid FROM ad_campaigns WHERE id = ?')
-            .bind(adp[1])
-            .first<{ id: string; advertiser_uid: string }>();
-          if (!camp) throw httpError(404, 'ad_not_found');
-          if (camp.advertiser_uid !== uid) throw httpError(403, 'not_your_ad');
-          const status = adp[2] === 'pause' ? 'paused' : 'active';
-          await env.DB.prepare('UPDATE ad_campaigns SET status = ? WHERE id = ?').bind(status, adp[1]).run();
-          return json({ ok: true, status });
-        }
-        const add = path.match(/^\/api\/ads\/([^/]+)$/);
-        if (add && method === 'DELETE') {
-          const uid = await guard(request, env);
-          await ensureAdTables(env.DB);
-          const camp = await env.DB.prepare('SELECT id, advertiser_uid FROM ad_campaigns WHERE id = ?')
-            .bind(add[1])
-            .first<{ id: string; advertiser_uid: string }>();
-          if (!camp) throw httpError(404, 'ad_not_found');
-          if (camp.advertiser_uid !== uid) throw httpError(403, 'not_your_ad');
-          await env.DB.prepare('DELETE FROM ad_campaigns WHERE id = ?').bind(add[1]).run();
-          return json({ ok: true });
-        }
-      }
       if (path === '/api/feed' && method === 'GET') {
         const uid = await guard(request, env);
         const cursor = vNum(url.searchParams.get('cursor') || Date.now(), 'cursor', 1, 4102444800000);
@@ -2905,53 +2785,51 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
             .bind(r.id, now()).first();
           out.push({ ...r, is_verified: await isVerified(env.DB, r.uid as string), affiliated_with: await affiliationFor(env.DB, r.uid as string), promoted: !!promo, is_following: !!r.is_following, media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string).catch(() => r.media_url) });
         }
-        // In-feed ads (TikTok-style): blend active campaigns into the
-        // page — first ad after 5 organic videos, then one every 10.
-        // Ads are the advertiser's own public videos, never the viewer's
-        // own campaigns. Rotation is by fewest impressions so every
-        // advertiser gets fair share.
-        // Wrapped so an ads failure can never break the feed.
+        // Promoted videos (TikTok Promote-style): a video with an active
+        // paid promotion is guaranteed placement in other users' feeds —
+        // inserted after every 5 organic videos (and appended once to
+        // short pages), labeled "Promoted" by the client via the
+        // promoted flag. If the video already made this page organically
+        // it is not duplicated — its organic copy already carries the
+        // Promoted label. Wrapped so a failure can never break the feed.
         try {
-          await ensureAdTables(env.DB);
-          const organic = out as unknown as Record<string, unknown>[];
-          if (organic.length >= 4) {
-            const adRows = await env.DB.prepare(
-              `SELECT c.id AS ad_id, c.cta_label, c.cta_url, v.*, u.handle, u.display_name, u.avatar_url, u.verification_type
-               FROM ad_campaigns c JOIN videos v ON v.id = c.video_id JOIN users u ON u.uid = c.advertiser_uid
-               WHERE c.status = 'active' AND c.advertiser_uid != ? AND v.visibility = 'public'
-               ORDER BY c.impressions ASC, c.created_at ASC LIMIT 6`,
+          if (out.length >= 1) {
+            const organic = out as unknown as Record<string, unknown>[];
+            const inPage = new Set(organic.map((v) => v.id));
+            const promoRows = await env.DB.prepare(
+              `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.verification_type
+               FROM promotions p JOIN videos v ON v.id = p.video_id JOIN users u ON u.uid = v.uid
+               WHERE p.status = 'active' AND p.ends_at > ? AND p.starts_at <= ? AND p.uid != ? AND v.visibility = 'public'
+               ORDER BY p.created_at DESC LIMIT 6`,
             )
-              .bind(uid)
+              .bind(now(), now(), uid)
               .all();
-            const adItems: Record<string, unknown>[] = [];
-            for (const r of adRows.results as Record<string, unknown>[]) {
-              // The ad unit is its own feed item even when the same video
-              // also appears organically (TikTok Spark Ads behave the
-              // same). Excluding it would starve ads on a young feed.
-              adItems.push({
+            const promoItems: Record<string, unknown>[] = [];
+            for (const r of promoRows.results as Record<string, unknown>[]) {
+              if (inPage.has(r.id as string)) continue;
+              promoItems.push({
                 ...r,
-                is_ad: true,
                 is_verified: await isVerified(env.DB, r.uid as string),
                 affiliated_with: await affiliationFor(env.DB, r.uid as string),
-                promoted: false,
+                promoted: true,
                 is_following: false,
                 media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string).catch(() => r.media_url),
               });
             }
-            if (adItems.length > 0) {
+            if (promoItems.length > 0) {
               const blended: Record<string, unknown>[] = [];
-              let ai = 0;
+              let pi = 0;
               for (let i = 0; i < organic.length; i++) {
                 blended.push(organic[i]);
-                const pos = i + 1;
-                if (ai < adItems.length && (pos === 5 || (pos > 5 && (pos - 5) % 10 === 0))) blended.push(adItems[ai++]);
+                if ((i + 1) % 5 === 0 && pi < promoItems.length) blended.push(promoItems[pi++]);
               }
+              if (pi === 0 && promoItems.length > 0) blended.push(promoItems[pi++]);
               organic.length = 0;
               organic.push(...blended);
             }
           }
         } catch (_) {
-          /* ads must never break the feed */
+          /* promoted placement must never break the feed */
         }
         return json({ videos: out, nextCursor: cursor });
       }
@@ -3008,6 +2886,9 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         const sm = path.match(/^\/api\/users\/me\/saved$/);
         if (sm && method === 'GET') {
           const uid = await guard(request, env, 60);
+          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS saved_videos (
+            uid TEXT NOT NULL, video_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+            PRIMARY KEY (uid, video_id))`).run();
           const rows = await env.DB.prepare(
             `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.verification_type
              FROM saved_videos s JOIN videos v ON v.id = s.video_id
@@ -5052,36 +4933,6 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
             ).bind(uid, t.uid, now(), now()).run();
           }
           return json({ ok: true });
-        }
-      }
-
-
-      // ---------- user reposts & saved videos ----------
-      {
-        const rm = path.match(/^\/api\/users\/me\/reposts$/);
-        if (rm && method === 'GET') {
-          const uid = await guard(request, env, 60);
-          const rows = await env.DB.prepare(
-            `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.is_verified, u.verification_type
-             FROM reposts r JOIN videos v ON v.id = r.video_id
-             JOIN users u ON u.uid = v.uid
-             WHERE r.uid = ? ORDER BY r.created_at DESC LIMIT 50`
-          ).bind(uid).all();
-          return json({ videos: rows.results || [] });
-        }
-        const sm = path.match(/^\/api\/users\/me\/saved$/);
-        if (sm && method === 'GET') {
-          const uid = await guard(request, env, 60);
-          await env.DB.prepare(`CREATE TABLE IF NOT EXISTS saved_videos (
-            uid TEXT NOT NULL, video_id TEXT NOT NULL, created_at INTEGER NOT NULL,
-            PRIMARY KEY (uid, video_id))`).run();
-          const rows = await env.DB.prepare(
-            `SELECT v.*, u.handle, u.display_name, u.avatar_url, u.is_verified, u.verification_type
-             FROM saved_videos s JOIN videos v ON v.id = s.video_id
-             JOIN users u ON u.uid = v.uid
-             WHERE s.uid = ? ORDER BY s.created_at DESC LIMIT 50`
-          ).bind(uid).all();
-          return json({ videos: rows.results || [] });
         }
       }
 
