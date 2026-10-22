@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../state/app_state.dart';
+import 'ads.dart';
 import 'monetization.dart';
 import 'promote.dart';
 import 'settings.dart';
@@ -12,7 +13,7 @@ import 'wallet.dart';
 ///
 /// Sections (exact per user spec):
 ///   Assets: Balance, Wallet (crypto)
-///   Personal tools: Activity center, Your QR code, Your Music, Promote
+///   Personal tools: Activity center, Your QR code, Your Music, Promote, Ads
 ///   Then: Settings and privacy
 class ProfileMenuScreen extends StatelessWidget {
   const ProfileMenuScreen({super.key});
@@ -94,6 +95,15 @@ class ProfileMenuScreen extends StatelessWidget {
               }
             },
           ),
+          _MenuRow(
+            icon: Icons.campaign_outlined,
+            label: 'Ads',
+            fg: fg,
+            sub: sub,
+            goldIcon: true,
+            onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdManagerScreen())),
+          ),
           const SizedBox(height: 8),
           _MenuRow(
             icon: Icons.settings_outlined,
@@ -150,7 +160,7 @@ class _MenuRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const gold = Color(0xFFFFC107);
+    final gold = Theme.of(context).colorScheme.primary;
     return ListTile(
       leading: Icon(icon, color: goldIcon ? gold : fg, size: 24),
       title: Text(label,
@@ -176,8 +186,8 @@ class MyQrScreen extends StatelessWidget {
     final bg = isDark ? Colors.black : Colors.white;
     final fg = isDark ? Colors.white : Colors.black87;
     final sub = isDark ? Colors.white60 : Colors.black54;
-    const gold = Color(0xFFFFC107);
-    final profileUrl = 'https://nova.app/@${u?.handle ?? 'nova'}';
+    final gold = Theme.of(context).colorScheme.primary;
+    final profileUrl = 'https://user.novamail.store/${u?.handle ?? 'nova'}';
 
     return Scaffold(
       backgroundColor: bg,
