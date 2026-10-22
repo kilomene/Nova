@@ -1,4 +1,5 @@
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -11,11 +12,11 @@ import '../utils/format.dart';
 import '../widgets/ai_badge.dart';
 import '../widgets/gifts.dart';
 import '../widgets/comment_tile.dart';
+import '../widgets/feed_ad.dart';
 import '../widgets/share_sheet.dart';
 import 'sound_page.dart';
 import '../widgets/nova_icons.dart';
 import '../widgets/video_longpress_menu.dart';
-import 'checkout_browser.dart';
 import 'discover.dart';
 import 'hashtag.dart';
 import 'profile.dart';
@@ -23,6 +24,27 @@ import 'promote.dart';
 import 'report.dart';
 import 'shell.dart';
 import '../utils/io_compat.dart';
+
+/// Marker for an AdMob ad page inserted between feed videos.
+class _AdSlot {
+  const _AdSlot();
+}
+
+/// Display items for the feed PageView: the videos, with an ad page
+/// inserted after the 5th video and then every 8 videos (mobile only —
+/// the web app is covered by AdSense). Promoted videos already arrive
+/// inside state.feed from the backend.
+List<Object> _feedItems(List<NovaVideo> feed) {
+  final items = <Object>[];
+  for (var i = 0; i < feed.length; i++) {
+    items.add(feed[i]);
+    final n = i + 1;
+    if (!kIsWeb && (n == 5 || (n > 5 && (n - 5) % 8 == 0))) {
+      items.add(const _AdSlot());
+    }
+  }
+  return items;
+}
 
 /// TikTok-style vertical feed: Following | For You tabs, full-screen
 /// swipeable videos, right action rail, double-tap to like.
@@ -138,18 +160,24 @@ class _FeedScreenState extends State<FeedScreen> with SingleTickerProviderStateM
               child: Text('No videos yet — be the first to upload.', style: TextStyle(color: sub)),
             );
           }
+          final items = _feedItems(state.feed);
           return RefreshIndicator(
             color: Theme.of(context).colorScheme.primary,
             onRefresh: refresh,
             child: PageView.builder(
               scrollDirection: Axis.vertical,
               physics: const AlwaysScrollableScrollPhysics(),
-              itemCount: state.feed.length,
+              itemCount: items.length,
               onPageChanged: (i) {
                 _currentIndex.value = i;
-                state.recordView(state.feed[i]);
+                final it = items[i];
+                if (it is NovaVideo) state.recordView(it);
               },
-              itemBuilder: (context, i) => VideoCard(video: state.feed[i], currentIndex: _currentIndex, index: i),
+              itemBuilder: (context, i) {
+                final it = items[i];
+                if (it is _AdSlot) return const FeedAdPage();
+                return VideoCard(video: it as NovaVideo, currentIndex: _currentIndex, index: i);
+              },
             ),
           );
         },
@@ -200,29 +228,11 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
     widget.currentIndex.addListener(_onIndex);
   }
 
-  bool _impressionLogged = false;
-
-  void _maybeLogImpression() {
-    final v = widget.video;
-    if (!v.isAd || _impressionLogged) return;
-    if (widget.currentIndex.value != widget.index) return;
-    _impressionLogged = true;
-    context.read<AppState>().logAdEvent(v, 'impression');
-  }
-
-  Future<void> _openCta() async {
-    final v = widget.video;
-    if (v.ctaUrl.isEmpty) return;
-    context.read<AppState>().logAdEvent(v, 'click');
-    await CheckoutBrowser.open(context, v.ctaUrl);
-  }
-
   void _onIndex() {
     final active = widget.currentIndex.value == widget.index;
     if (_c == null || !_c!.value.isInitialized) return;
     if (active) {
       _c!.play();
-      _maybeLogImpression();
     } else {
       _c!.pause();
     }
@@ -234,10 +244,7 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
       _c = url.startsWith('http') ? VideoPlayerController.networkUrl(Uri.parse(url)) : fileVideoController(url);
       await _c!.initialize();
       _c!.setLooping(true);
-      if (widget.currentIndex.value == widget.index && mounted) {
-        _c!.play();
-        _maybeLogImpression();
-      }
+      if (widget.currentIndex.value == widget.index && mounted) _c!.play();
       if (mounted) setState(() {});
     } catch (_) {
       if (mounted) setState(() => _error = 'Video unavailable');
@@ -253,7 +260,6 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
   }
 
   void _doubleTapLike() {
-    if (widget.video.isAd) return;
     final state = context.read<AppState>();
     if (!widget.video.likedByMe) state.toggleLike(widget.video);
     setState(() => _showHeart = true);
@@ -264,7 +270,6 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
   }
 
   void _openLongPressMenu() {
-    if (widget.video.isAd) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -329,7 +334,7 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
                 ),
               ),
             ),
-          if (!_clearDisplay && !v.isAd)
+          if (!_clearDisplay)
           // right action rail
           Positioned(
             right: 8,
@@ -537,19 +542,6 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
                               style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 11, fontWeight: FontWeight.bold)),
                         ),
                       ],
-                      if (v.isAd) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.white24,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: Colors.white54, width: 1),
-                          ),
-                          child: const Text('Sponsored',
-                              style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                        ),
-                      ],
                       if (v.isAiGenerated) ...[
                         const SizedBox(width: 8),
                         const AiBadge(compact: true),
@@ -576,31 +568,7 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
                     ],
                   ),
                 ],
-                if (v.isAd && v.ctaUrl.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  GestureDetector(
-                    onTap: _openCta,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(v.ctaLabel.isNotEmpty ? v.ctaLabel : 'Learn More',
-                              style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onPrimary,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold)),
-                          const SizedBox(width: 6),
-                          Icon(Icons.arrow_forward, size: 16, color: Theme.of(context).colorScheme.onPrimary),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+
               ],
             ),
           ),
