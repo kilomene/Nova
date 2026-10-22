@@ -167,6 +167,11 @@ class NovaVideo {
   final Affiliation? affiliatedWith;
   final bool promoted;
   final bool isAiGenerated;
+  // In-feed ad fields (set when the feed item is a sponsored ad unit).
+  final bool isAd;
+  final String adId;
+  final String ctaLabel;
+  final String ctaUrl;
 
   NovaVideo({
     required this.id,
@@ -191,6 +196,10 @@ class NovaVideo {
     this.affiliatedWith,
     this.promoted = false,
     this.isAiGenerated = false,
+    this.isAd = false,
+    this.adId = '',
+    this.ctaLabel = '',
+    this.ctaUrl = '',
   });
 
   factory NovaVideo.fromJson(Map<String, dynamic> j) {
@@ -226,6 +235,10 @@ class NovaVideo {
       affiliatedWith: parseAffiliation(j['affiliated_with'] ?? j['affiliatedWith']),
       promoted: (j['promoted'] ?? false) == true,
       isAiGenerated: (j['is_ai_generated'] ?? j['isAiGenerated'] ?? false) == true,
+      isAd: (j['is_ad'] ?? j['isAd'] ?? false) == true,
+      adId: '${j['ad_id'] ?? j['adId'] ?? ''}',
+      ctaLabel: '${j['cta_label'] ?? j['ctaLabel'] ?? ''}',
+      ctaUrl: '${j['cta_url'] ?? j['ctaUrl'] ?? ''}',
     );
   }
 }
