@@ -251,6 +251,30 @@ async function ensureAffiliationsTable(db: D1Database): Promise<void> {
   affiliationsEnsured = true;
 }
 
+// In-feed video ads (TikTok-style): a campaign promotes one of the
+// advertiser's own public videos; the feed blender inserts it as a
+// sponsored item with a CTA. Impressions/clicks are counters on the row.
+let adTablesEnsured = false;
+async function ensureAdTables(db: D1Database): Promise<void> {
+  if (adTablesEnsured) return;
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS ad_campaigns (
+      id TEXT PRIMARY KEY,
+      advertiser_uid TEXT NOT NULL,
+      video_id TEXT NOT NULL,
+      cta_label TEXT NOT NULL,
+      cta_url TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      impressions INTEGER NOT NULL DEFAULT 0,
+      clicks INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    )`),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_ad_campaigns_status ON ad_campaigns(status, impressions)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_ad_campaigns_advertiser ON ad_campaigns(advertiser_uid)'),
+  ]);
+  adTablesEnsured = true;
+}
+
 // coin_purchases maps each Flutterwave tx_ref to its buyer + package so the
 // webhook/callback settler never has to parse underscores out of tx_refs
 // (package ids like "coins_500" contain them). Same deploy-safety pattern.
@@ -1186,34 +1210,134 @@ export default {
         }
       }
 
-      // ---------- root domain verification page (public, no auth) ----------
-      // AdSense requires verification at the top-level domain novamail.store.
-      // Serve a simple page with the AdSense script so the crawler finds it.
+      // ---------- root domain site (public, no auth) ----------
+      // novamail.store is Nova's public home: a real landing page with
+      // substantive product content, plus the Privacy Policy and Terms
+      // pages AdSense review (and users) expect to find.
       {
         const host = (request.headers.get('host') || '').split(':')[0].toLowerCase();
-        if (host === 'novamail.store' && path === '/' && method === 'GET') {
-          const html = `<!DOCTYPE html>
+        const pageShell = (title: string, body: string) => `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nova</title>
+<title>${title}</title>
+<meta name="description" content="Nova is one app for short video, a global marketplace, a crypto wallet and P2P trading. Watch, sell, send and trade — one account for it all.">
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2431202994591245" crossorigin="anonymous"></script>
 <style>
-body{background:#0b0b0f;color:#fff;font-family:system-ui,-apple-system,sans-serif;margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center}
-h1{font-size:32px;margin:0 0 12px}
-a{color:#D4AF37;font-size:18px;text-decoration:none}
+body{background:#0b0b0f;color:#eee;font-family:system-ui,-apple-system,sans-serif;margin:0;line-height:1.65}
+.wrap{max-width:860px;margin:0 auto;padding:32px 20px 56px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:36px}
+.logo{font-size:26px;font-weight:800;letter-spacing:2px;color:#D4AF37;text-decoration:none}
+nav a{color:#ccc;text-decoration:none;margin-left:18px;font-size:14px}
+nav a:hover{color:#D4AF37}
+h1{font-size:38px;line-height:1.2;margin:0 0 14px}
+h2{font-size:22px;margin:34px 0 8px;color:#fff}
+p,li{color:#c9c9d2;font-size:16px}
+.gold{color:#D4AF37}
+.cta{display:inline-block;background:#D4AF37;color:#000;font-weight:700;padding:12px 22px;border-radius:8px;text-decoration:none;margin:10px 10px 0 0}
+.cta.alt{background:transparent;color:#D4AF37;border:1px solid #D4AF37}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:14px}
+.card{background:#15151c;border:1px solid #26262f;border-radius:12px;padding:18px}
+.card h3{margin:0 0 6px;font-size:17px;color:#fff}
+.card p{font-size:14px;margin:0}
+footer{margin-top:48px;border-top:1px solid #26262f;padding-top:18px;font-size:13px;color:#8a8a95}
+footer a{color:#D4AF37;text-decoration:none;margin-right:16px}
 </style>
 </head>
 <body>
-<div>
-<h1>Nova</h1>
-<p><a href="https://user.novamail.store/coins">Buy Nova Coins</a></p>
-<p><a href=\"https://domains.novamail.store\">Get your own novamail.store subdomain \— from $1/mo</a></p>\n
+<div class="wrap">
+<header>
+<a class="logo" href="/">NOVA</a>
+<nav>
+<a href="https://app.novamail.store">Web App</a>
+<a href="https://user.novamail.store/coins">Nova Coins</a>
+<a href="https://domains.novamail.store">Subdomains</a>
+<a href="/privacy">Privacy</a>
+<a href="/terms">Terms</a>
+</nav>
+</header>
+${body}
+<footer>
+<a href="/privacy">Privacy Policy</a>
+<a href="/terms">Terms of Service</a>
+<a href="mailto:nova@nova.app">nova@nova.app</a>
+<div style="margin-top:8px">© 2026 Nova. All rights reserved.</div>
+</footer>
 </div>
 </body>
 </html>`;
-          return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff' } });
+        if (host === 'novamail.store' && path === '/' && method === 'GET') {
+          const body = `
+<h1>Short video, marketplace, wallet and P2P — <span class="gold">one account for it all.</span></h1>
+<p>Nova is a social platform built around short video. You watch and post videos in a personalised For You feed, sell in a global marketplace, hold and send crypto in a built-in wallet, and trade peer-to-peer with escrow protection — without juggling five different apps and five different logins.</p>
+<a class="cta" href="https://app.novamail.store">Open Nova in your browser</a>
+<a class="cta alt" href="https://user.novamail.store/coins">Buy Nova Coins</a>
+<h2>What you can do on Nova</h2>
+<div class="grid">
+<div class="card"><h3>For You video feed</h3><p>An endless, personalised stream of short videos. Follow creators, go live from the mobile app, save sounds, and share clips anywhere with public links.</p></div>
+<div class="card"><h3>Marketplace</h3><p>List products with photos, take orders, and get paid when your buyer confirms delivery. Payments are held safely until the order completes.</p></div>
+<div class="card"><h3>Wallet</h3><p>A non-custodial wallet for BTC, ETH, USDT and USDC. Send and receive, follow live prices, and pay other Nova users straight from chat.</p></div>
+<div class="card"><h3>P2P trading</h3><p>Buy and sell crypto directly with other people at your own price. Funds sit in escrow during the trade and release only when both sides are satisfied.</p></div>
+<div class="card"><h3>Nova Coins</h3><p>Coins power gifts, promotions and boosts inside Nova. Top up in seconds from the web store and your balance is ready in the app instantly.</p></div>
+<div class="card"><h3>Your own subdomain</h3><p>Claim a name under novamail.store — from $1/month — and point it at your site, shop or profile with simple, guarded DNS controls.</p></div>
+</div>
+<h2>How Nova works</h2>
+<p>Create one free account with your email, Google account or username. Your profile, wallet, shop and messages all live behind that single sign-in, on Android and on the web. Creators post videos and grow an audience; sellers open a shop from the same profile; traders post P2P offers from the wallet. Verification badges (personal, business and company) show who you are dealing with, and company accounts can affiliate their team so customers recognise official staff.</p>
+<p>Nova takes safety seriously: marketplace payments are held in escrow until delivery, P2P trades are escrow-protected, accounts can enable two-factor authentication and biometrics, and our support team reviews reports of fraud, impersonation and abuse.</p>
+<h2>Get started</h2>
+<p>Open the <a class="gold" href="https://app.novamail.store">Nova web app</a> — no install needed — or grab the Android app and sign in with the same account. Everything syncs in real time.</p>`;
+          return new Response(pageShell('Nova — Short Video, Marketplace, Wallet & P2P', body), {
+            headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff' },
+          });
+        }
+        if (host === 'novamail.store' && path === '/privacy' && method === 'GET') {
+          const body = `
+<h1>Privacy Policy</h1>
+<p>Last updated: October 22, 2026. This policy explains what information Nova ("we", "us") collects when you use the Nova app, the Nova web app and this website, and how that information is used.</p>
+<h2>Information we collect</h2>
+<p><strong>Account information:</strong> your name, username, email address and profile photo when you register. <strong>Content:</strong> videos, photos, comments, messages and listings you create. <strong>Wallet information:</strong> public blockchain addresses associated with your account; your private keys are generated and stored encrypted on your own device and are never sent to our servers. <strong>Usage data:</strong> how you interact with the service, such as videos watched, likes and follows. <strong>Device data:</strong> device type, operating system and app version, used to keep the service working and secure.</p>
+<h2>How we use information</h2>
+<p>We use this information to operate the service (including your personalised video feed), process marketplace and P2P transactions, prevent fraud and abuse, provide customer support, and improve Nova. We do not sell your personal information.</p>
+<h2>Cookies and advertising</h2>
+<p>We and our partners use cookies and similar technologies to keep you signed in, remember preferences and measure usage. Third party vendors, including Google, use cookies to serve ads based on a user's prior visits to this website or other websites. Google's use of advertising cookies enables it and its partners to serve ads to users based on their visit to this site and/or other sites on the Internet. Users may opt out of personalised advertising by visiting <a class="gold" href="https://www.google.com/settings/ads">Google Ads Settings</a>. You can also opt out of some third-party vendors' use of cookies for personalised advertising at <a class="gold" href="https://www.aboutads.info/choices/">aboutads.info/choices</a>.</p>
+<h2>Sharing</h2>
+<p>Content you post publicly (videos, profile, listings) is visible to other users by design. We share limited data with service providers who help us run Nova — hosting, payments and analytics — under contracts that restrict their use of it. We disclose information when required by law.</p>
+<h2>Security</h2>
+<p>Traffic is encrypted in transit, media downloads use short-lived signed links, and accounts support two-factor authentication and biometric unlock. No system is perfectly secure, but we work continuously to protect your data.</p>
+<h2>Your choices</h2>
+<p>You can edit or delete your content, adjust privacy settings (including private posts), and request deletion of your account and associated personal data by contacting us.</p>
+<h2>Children</h2>
+<p>Nova is not directed at children under 13, and we do not knowingly collect their personal information.</p>
+<h2>Contact</h2>
+<p>Questions about this policy: <a class="gold" href="mailto:nova@nova.app">nova@nova.app</a>.</p>`;
+          return new Response(pageShell('Privacy Policy — Nova', body), {
+            headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff' },
+          });
+        }
+        if (host === 'novamail.store' && path === '/terms' && method === 'GET') {
+          const body = `
+<h1>Terms of Service</h1>
+<p>Last updated: October 22, 2026. By using Nova you agree to these terms.</p>
+<h2>The service</h2>
+<p>Nova provides a short-video platform, a marketplace, a non-custodial crypto wallet, peer-to-peer trading tools, virtual coins and related services, available on Android and the web.</p>
+<h2>Your account</h2>
+<p>You are responsible for your account and for activity under it. Keep your credentials and wallet PIN safe. Wallet private keys live only on your device: if you lose them, we cannot recover your funds.</p>
+<h2>Your content</h2>
+<p>You own the content you post. You grant Nova a licence to host, display and distribute it as part of operating the service. Do not post content that is illegal, infringing, deceptive or abusive. AI-generated media must be declared when you upload it. We may remove content or accounts that break these terms or the law.</p>
+<h2>Marketplace and P2P</h2>
+<p>Sellers are responsible for accurate listings and timely shipping. Marketplace payments are held until delivery is confirmed, then released to the seller minus a 5% commission. P2P trades use escrow; both parties must follow the trade terms and respond to disputes honestly. Cryptocurrency prices are volatile — Nova is not financial advice.</p>
+<h2>Nova Coins</h2>
+<p>Coins are virtual items for use inside Nova (gifts, promotions). They are not currency, are not redeemable for cash except through the creator earnings payout programme, and balances follow the rules shown in the app.</p>
+<h2>Advertising</h2>
+<p>Advertisers are responsible for their ads and the pages they link to. Ads shown in the feed are labelled "Sponsored".</p>
+<h2>Liability</h2>
+<p>The service is provided "as is". To the extent permitted by law, Nova is not liable for indirect or consequential losses, or for losses arising from user-to-user transactions beyond the escrow Nova actually holds.</p>
+<h2>Contact</h2>
+<p><a class="gold" href="mailto:nova@nova.app">nova@nova.app</a></p>`;
+          return new Response(pageShell('Terms of Service — Nova', body), {
+            headers: { 'content-type': 'text/html; charset=utf-8', 'x-content-type-options': 'nosniff' },
+          });
         }
       }
 
@@ -2635,6 +2759,102 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
         ).all();
         return json({ sounds: rows.results });
       }
+      // ---------- in-feed video ads ----------
+      if (path === '/api/ads' && method === 'POST') {
+        const uid = await guard(request, env);
+        await ensureAdTables(env.DB);
+        const b = await readJson<{ video_id?: string; cta_label?: string; cta_url?: string }>(request);
+        const videoId = vStr(b.video_id, 'video_id', 1, 64);
+        const ctaLabel = vStr(b.cta_label, 'cta_label', 1, 24);
+        const ctaUrl = vStr(b.cta_url, 'cta_url', 4, 500);
+        if (!/^https?:\/\//i.test(ctaUrl)) throw httpError(400, 'cta_url_must_be_http');
+        const video = await env.DB.prepare('SELECT id, uid, visibility FROM videos WHERE id = ?')
+          .bind(videoId)
+          .first<{ id: string; uid: string; visibility: string }>();
+        if (!video) throw httpError(404, 'video_not_found');
+        if (video.uid !== uid) throw httpError(403, 'not_your_video');
+        if (video.visibility !== 'public') throw httpError(400, 'video_must_be_public');
+        const activeCount = await env.DB.prepare("SELECT COUNT(*) AS n FROM ad_campaigns WHERE advertiser_uid = ? AND status = 'active'")
+          .bind(uid)
+          .first<{ n: number }>();
+        if ((activeCount?.n ?? 0) >= 5) throw httpError(400, 'too_many_active_ads');
+        const id = 'ad_' + newId();
+        await env.DB.prepare(
+          "INSERT INTO ad_campaigns (id, advertiser_uid, video_id, cta_label, cta_url, status, impressions, clicks, created_at) VALUES (?, ?, ?, ?, ?, 'active', 0, 0, ?)",
+        )
+          .bind(id, uid, videoId, ctaLabel, ctaUrl, now())
+          .run();
+        return json({ id, status: 'active' });
+      }
+      if (path === '/api/ads/mine' && method === 'GET') {
+        const uid = await guard(request, env);
+        await ensureAdTables(env.DB);
+        const rows = await env.DB.prepare(
+          'SELECT c.*, v.caption AS video_caption, v.media_key AS video_media_key FROM ad_campaigns c JOIN videos v ON v.id = c.video_id WHERE c.advertiser_uid = ? ORDER BY c.created_at DESC',
+        )
+          .bind(uid)
+          .all();
+        const out = [];
+        for (const r of rows.results as Record<string, unknown>[]) {
+          out.push({ ...r, video_media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.video_media_key as string).catch(() => '') });
+        }
+        return json({ ads: out });
+      }
+      if (path === '/api/ads/my-videos' && method === 'GET') {
+        const uid = await guard(request, env);
+        const rows = await env.DB.prepare(
+          "SELECT id, caption, media_key, created_at, like_count FROM videos WHERE uid = ? AND visibility = 'public' ORDER BY created_at DESC LIMIT 100",
+        )
+          .bind(uid)
+          .all();
+        const out = [];
+        for (const r of rows.results as Record<string, unknown>[]) {
+          out.push({ ...r, media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string).catch(() => '') });
+        }
+        return json({ videos: out });
+      }
+      {
+        const adm = path.match(/^\/api\/ads\/([^/]+)\/(impression|click)$/);
+        if (adm && method === 'POST') {
+          const uid = await guard(request, env);
+          await ensureAdTables(env.DB);
+          const camp = await env.DB.prepare('SELECT id, advertiser_uid FROM ad_campaigns WHERE id = ?')
+            .bind(adm[1])
+            .first<{ id: string; advertiser_uid: string }>();
+          if (!camp) throw httpError(404, 'ad_not_found');
+          // Advertisers never inflate their own stats.
+          if (camp.advertiser_uid !== uid) {
+            const col = adm[2] === 'click' ? 'clicks' : 'impressions';
+            await env.DB.prepare(`UPDATE ad_campaigns SET ${col} = ${col} + 1 WHERE id = ?`).bind(adm[1]).run();
+          }
+          return json({ ok: true });
+        }
+        const adp = path.match(/^\/api\/ads\/([^/]+)\/(pause|resume)$/);
+        if (adp && method === 'POST') {
+          const uid = await guard(request, env);
+          await ensureAdTables(env.DB);
+          const camp = await env.DB.prepare('SELECT id, advertiser_uid FROM ad_campaigns WHERE id = ?')
+            .bind(adp[1])
+            .first<{ id: string; advertiser_uid: string }>();
+          if (!camp) throw httpError(404, 'ad_not_found');
+          if (camp.advertiser_uid !== uid) throw httpError(403, 'not_your_ad');
+          const status = adp[2] === 'pause' ? 'paused' : 'active';
+          await env.DB.prepare('UPDATE ad_campaigns SET status = ? WHERE id = ?').bind(status, adp[1]).run();
+          return json({ ok: true, status });
+        }
+        const add = path.match(/^\/api\/ads\/([^/]+)$/);
+        if (add && method === 'DELETE') {
+          const uid = await guard(request, env);
+          await ensureAdTables(env.DB);
+          const camp = await env.DB.prepare('SELECT id, advertiser_uid FROM ad_campaigns WHERE id = ?')
+            .bind(add[1])
+            .first<{ id: string; advertiser_uid: string }>();
+          if (!camp) throw httpError(404, 'ad_not_found');
+          if (camp.advertiser_uid !== uid) throw httpError(403, 'not_your_ad');
+          await env.DB.prepare('DELETE FROM ad_campaigns WHERE id = ?').bind(add[1]).run();
+          return json({ ok: true });
+        }
+      }
       if (path === '/api/feed' && method === 'GET') {
         const uid = await guard(request, env);
         const cursor = vNum(url.searchParams.get('cursor') || Date.now(), 'cursor', 1, 4102444800000);
@@ -2684,6 +2904,54 @@ fetch('/api/coins/config').then(function(r){return r.json();}).then(function(c){
           const promo = await env.DB.prepare("SELECT id FROM promotions WHERE video_id = ? AND status = 'active' AND ends_at > ?")
             .bind(r.id, now()).first();
           out.push({ ...r, is_verified: await isVerified(env.DB, r.uid as string), affiliated_with: await affiliationFor(env.DB, r.uid as string), promoted: !!promo, is_following: !!r.is_following, media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string).catch(() => r.media_url) });
+        }
+        // In-feed ads (TikTok-style): blend active campaigns into the
+        // page — first ad after 5 organic videos, then one every 10.
+        // Ads are the advertiser's own public videos, never the viewer's
+        // own campaigns. Rotation is by fewest impressions so every
+        // advertiser gets fair share.
+        // Wrapped so an ads failure can never break the feed.
+        try {
+          await ensureAdTables(env.DB);
+          const organic = out as unknown as Record<string, unknown>[];
+          if (organic.length >= 4) {
+            const adRows = await env.DB.prepare(
+              `SELECT c.id AS ad_id, c.cta_label, c.cta_url, v.*, u.handle, u.display_name, u.avatar_url, u.verification_type
+               FROM ad_campaigns c JOIN videos v ON v.id = c.video_id JOIN users u ON u.uid = c.advertiser_uid
+               WHERE c.status = 'active' AND c.advertiser_uid != ? AND v.visibility = 'public'
+               ORDER BY c.impressions ASC, c.created_at ASC LIMIT 6`,
+            )
+              .bind(uid)
+              .all();
+            const adItems: Record<string, unknown>[] = [];
+            for (const r of adRows.results as Record<string, unknown>[]) {
+              // The ad unit is its own feed item even when the same video
+              // also appears organically (TikTok Spark Ads behave the
+              // same). Excluding it would starve ads on a young feed.
+              adItems.push({
+                ...r,
+                is_ad: true,
+                is_verified: await isVerified(env.DB, r.uid as string),
+                affiliated_with: await affiliationFor(env.DB, r.uid as string),
+                promoted: false,
+                is_following: false,
+                media_url: await signMediaKey(env.MEDIA_SIGNING_SECRET, r.media_key as string).catch(() => r.media_url),
+              });
+            }
+            if (adItems.length > 0) {
+              const blended: Record<string, unknown>[] = [];
+              let ai = 0;
+              for (let i = 0; i < organic.length; i++) {
+                blended.push(organic[i]);
+                const pos = i + 1;
+                if (ai < adItems.length && (pos === 5 || (pos > 5 && (pos - 5) % 10 === 0))) blended.push(adItems[ai++]);
+              }
+              organic.length = 0;
+              organic.push(...blended);
+            }
+          }
+        } catch (_) {
+          /* ads must never break the feed */
         }
         return json({ videos: out, nextCursor: cursor });
       }
