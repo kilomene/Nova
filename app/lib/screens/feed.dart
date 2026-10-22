@@ -15,6 +15,7 @@ import '../widgets/share_sheet.dart';
 import 'sound_page.dart';
 import '../widgets/nova_icons.dart';
 import '../widgets/video_longpress_menu.dart';
+import 'checkout_browser.dart';
 import 'discover.dart';
 import 'hashtag.dart';
 import 'profile.dart';
@@ -199,11 +200,29 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
     widget.currentIndex.addListener(_onIndex);
   }
 
+  bool _impressionLogged = false;
+
+  void _maybeLogImpression() {
+    final v = widget.video;
+    if (!v.isAd || _impressionLogged) return;
+    if (widget.currentIndex.value != widget.index) return;
+    _impressionLogged = true;
+    context.read<AppState>().logAdEvent(v, 'impression');
+  }
+
+  Future<void> _openCta() async {
+    final v = widget.video;
+    if (v.ctaUrl.isEmpty) return;
+    context.read<AppState>().logAdEvent(v, 'click');
+    await CheckoutBrowser.open(context, v.ctaUrl);
+  }
+
   void _onIndex() {
     final active = widget.currentIndex.value == widget.index;
     if (_c == null || !_c!.value.isInitialized) return;
     if (active) {
       _c!.play();
+      _maybeLogImpression();
     } else {
       _c!.pause();
     }
@@ -215,7 +234,10 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
       _c = url.startsWith('http') ? VideoPlayerController.networkUrl(Uri.parse(url)) : fileVideoController(url);
       await _c!.initialize();
       _c!.setLooping(true);
-      if (widget.currentIndex.value == widget.index && mounted) _c!.play();
+      if (widget.currentIndex.value == widget.index && mounted) {
+        _c!.play();
+        _maybeLogImpression();
+      }
       if (mounted) setState(() {});
     } catch (_) {
       if (mounted) setState(() => _error = 'Video unavailable');
@@ -231,6 +253,7 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
   }
 
   void _doubleTapLike() {
+    if (widget.video.isAd) return;
     final state = context.read<AppState>();
     if (!widget.video.likedByMe) state.toggleLike(widget.video);
     setState(() => _showHeart = true);
@@ -241,6 +264,7 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
   }
 
   void _openLongPressMenu() {
+    if (widget.video.isAd) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -305,7 +329,7 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
                 ),
               ),
             ),
-          if (!_clearDisplay)
+          if (!_clearDisplay && !v.isAd)
           // right action rail
           Positioned(
             right: 8,
@@ -513,6 +537,19 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
                               style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 11, fontWeight: FontWeight.bold)),
                         ),
                       ],
+                      if (v.isAd) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.white24,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.white54, width: 1),
+                          ),
+                          child: const Text('Sponsored',
+                              style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
                       if (v.isAiGenerated) ...[
                         const SizedBox(width: 8),
                         const AiBadge(compact: true),
@@ -537,6 +574,31 @@ class _VideoCardState extends State<VideoCard> with TickerProviderStateMixin {
                         child: Text(v.soundLabel, style: const TextStyle(color: Colors.white70, fontSize: 12), overflow: TextOverflow.ellipsis),
                       ),
                     ],
+                  ),
+                ],
+                if (v.isAd && v.ctaUrl.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  GestureDetector(
+                    onTap: _openCta,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(v.ctaLabel.isNotEmpty ? v.ctaLabel : 'Learn More',
+                              style: TextStyle(
+                                  color: Theme.of(context).colorScheme.onPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 6),
+                          Icon(Icons.arrow_forward, size: 16, color: Theme.of(context).colorScheme.onPrimary),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ],
