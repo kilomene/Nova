@@ -3,6 +3,7 @@
          local_auth plugin's manifest; repeated here explicitly so release
          builds never lose it during manifest merging. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <application
         android:label="nova"
         android:name="${applicationName}"
@@ -29,6 +30,9 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-2431202994591245~6683730284" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
