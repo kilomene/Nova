@@ -31,15 +31,15 @@ class _AdSlot {
 }
 
 /// Display items for the feed PageView: the videos, with an ad page
-/// inserted after the 5th video and then every 8 videos (mobile only —
-/// the web app is covered by AdSense). Promoted videos already arrive
-/// inside state.feed from the backend.
+/// inserted after the 5th video and then every 8 videos — AdMob native
+/// on mobile, AdSense on web. Promoted videos already arrive inside
+/// state.feed from the backend.
 List<Object> _feedItems(List<NovaVideo> feed) {
   final items = <Object>[];
   for (var i = 0; i < feed.length; i++) {
     items.add(feed[i]);
     final n = i + 1;
-    if (!kIsWeb && (n == 5 || (n > 5 && (n - 5) % 8 == 0))) {
+    if (n == 5 || (n > 5 && (n - 5) % 8 == 0)) {
       items.add(const _AdSlot());
     }
   }
