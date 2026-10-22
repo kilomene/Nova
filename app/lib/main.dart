@@ -1,4 +1,8 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart' hide AppState;
 import 'package:provider/provider.dart';
 
 import 'config.dart';
@@ -18,6 +22,10 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // AdMob (mobile only — the web app is covered by AdSense).
+  if (!kIsWeb) {
+    unawaited(MobileAds.instance.initialize());
+  }
 
   final auth = AuthService();
   final api = ApiClient(
