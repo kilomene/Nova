@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import 'adsense_view.dart';
+
 /// Full-screen AdMob native ad page inside the For You feed.
 ///
 /// Shows a real native ad when Google fills one. Until the account/app
@@ -70,6 +72,17 @@ class _FeedAdPageState extends State<FeedAdPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      // Web: the AdSense view sits over the house card. Until Google
+      // approves the account the unit stays empty/transparent and the
+      // house card shows; once ads serve, they cover the card.
+      return Stack(
+        children: [
+          _houseCard(),
+          Positioned.fill(child: buildAdsenseView()),
+        ],
+      );
+    }
     if (_loaded && _ad != null) {
       return ColoredBox(
         color: Colors.black,
@@ -94,8 +107,12 @@ class _FeedAdPageState extends State<FeedAdPage> {
         ),
       );
     }
-    // House card fallback: shown while loading, on no-fill, and until
-    // Google finishes verifying the account/app.
+    return _houseCard();
+  }
+
+  /// House card fallback: shown while loading, on no-fill, and until
+  /// Google finishes verifying the account/app.
+  Widget _houseCard() {
     return ColoredBox(
       color: const Color(0xFF0A0A0A),
       child: Center(
